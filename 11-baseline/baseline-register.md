@@ -54,6 +54,32 @@ The following Build Coach topics form the validated v1 baseline:
 - Build Coach 04 — Flow B Build
 - Build Coach 05 — End-to-End Testing and Controlled Amendment Process
 
+## Knowledge grounding validation
+
+Status:
+
+Passed
+
+Validated with:
+
+- 00-START-HERE-v1-baseline.md
+- amendment-log.md
+
+Confirmed behaviour:
+
+- Core baseline files are retrievable.
+- Baseline concepts are summarised correctly.
+- Controlled amendment process is recognised.
+- SharePoint Knowledge mirror is usable by the Build Coach.
+
+Notes:
+
+The Build Coach agent has been updated to prioritise the SharePoint knowledge source named:
+
+Teams-OneNote-Meeting-Capture v1.0.0 Baseline
+
+For baseline questions, the agent should use 00-START-HERE-v1-baseline.md first and should not rely on general OneNote, Teams, Microsoft support, or web content unless the maker explicitly asks for general product help.
+
 ## Next controlled phase
 
 Operationalisation and production readiness should be handled as a future controlled baseline extension.
