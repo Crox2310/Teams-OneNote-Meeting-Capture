@@ -8,7 +8,7 @@ Teams-OneNote-Meeting-Capture v1.0.0 — Validated Build Coach Baseline
 
 Status:
 
-Trusted v1 build baseline.
+Trusted v1 build baseline with operational readiness extension completed.
 
 ## Included scope
 
@@ -23,6 +23,7 @@ This baseline includes:
 - Build Coach 03 — Flow B Connector Validation
 - Build Coach 04 — Flow B Build
 - Build Coach 05 — End-to-End Testing and Controlled Amendment Process
+- Build Coach 06 — Operationalisation and Production Readiness
 
 ## Validated stages
 
@@ -34,6 +35,7 @@ This baseline includes:
 - Stage 6 — Flow B connector validation
 - Stage 7 — Flow B build
 - Stage 8 — End-to-end testing and controlled amendment process
+- Stage 9 — Operationalisation and production readiness
 
 ## Baseline principles
 
@@ -43,6 +45,7 @@ This baseline includes:
 - Build failures must be diagnosed before correction.
 - Fixes must be documented before implementation.
 - No ad hoc patching is permitted.
+- Future changes must be handled through the controlled amendment process or formal versioning model.
 
 ## Current Copilot Studio topics
 
@@ -53,6 +56,7 @@ The following Build Coach topics form the validated v1 baseline:
 - Build Coach 03 — Flow B Connector Validation
 - Build Coach 04 — Flow B Build
 - Build Coach 05 — End-to-End Testing and Controlled Amendment Process
+- Build Coach 06 — Operationalisation and Production Readiness
 
 ## Knowledge grounding validation
 
@@ -80,6 +84,53 @@ Teams-OneNote-Meeting-Capture v1.0.0 Baseline
 
 For baseline questions, the agent should use 00-START-HERE-v1-baseline.md first and should not rely on general OneNote, Teams, Microsoft support, or web content unless the maker explicitly asks for general product help.
 
-## Next controlled phase
+## Operational readiness validation
 
-Operationalisation and production readiness should be handled as a future controlled baseline extension.
+Status:
+
+Completed
+
+Validated through:
+
+- Stage 9 Step 1 — Confirm environments and ownership
+- Stage 9 Step 2 — Confirm connector accounts and permissions
+- Stage 9 Step 3 — Confirm publishing and versioning process
+- Stage 9 Step 4 — Confirm monitoring and diagnostics approach
+- Stage 9 Step 5 — Confirm support and failure-handling process
+- Stage 9 Step 6 — Confirm controlled amendment operating model
+- Stage 9 Step 7 — Run production readiness review
+
+Confirmed behaviour:
+
+- ownership model has been reviewed
+- connector account and permission model has been reviewed
+- publishing and versioning process has been reviewed
+- monitoring and diagnostics approach has been reviewed
+- support and failure-handling process has been reviewed
+- controlled amendment operating model has been reviewed
+- production readiness review has been completed
+
+## Production readiness outcome
+
+Readiness decision:
+
+To be recorded as one of:
+
+- GO
+- GO WITH CONDITIONS
+- NO-GO
+
+Review notes:
+
+Record final readiness notes here after Stage 9 Step 7 testing is complete.
+
+## Future controlled changes
+
+After Stage 9, future work should be handled through:
+
+- controlled amendment
+- v1.0.x operational or documentation update
+- v1.1.0 minor enhancement
+- v2.0.0 major design or architecture change
+
+No further uncontrolled build stages should be added to the v1 baseline.
