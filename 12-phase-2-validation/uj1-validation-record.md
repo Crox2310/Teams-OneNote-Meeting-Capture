@@ -1,206 +1,154 @@
 # UJ1 Validation Record — One-off Single Match
 
-## User journey
+## User Journey  
+UJ1 — One-off single match  
 
-UJ1 — one-off single match
+---
 
-## Purpose
+## Purpose  
+Validate that the Meeting Capture agent correctly:
 
-Validate that the user-facing Meeting Capture solution can resolve a single one-off Outlook meeting and create a OneNote meeting notes page without creating a recurring SharePoint mapping.
+- Identifies a single Outlook meeting from the user's natural language input  
+- Resolves the meeting without requiring selection  
+- Displays confirmation to the user  
+- Calls Flow B with correct inputs  
+- Creates a new OneNote page in the default meeting notes section  
+- Returns a valid page link and summary response  
 
-## Expected behaviour
+---
 
-- Flow A returns SINGLE_MATCH.
-- MatchCount equals 1.
-- MeetingTitle is populated.
-- CalendarEventId is populated.
-- IsRecurring is false.
-- Topic routes to SINGLE_MATCH.
-- Flow B follows the one-off path.
-- OneNote page is created in the default meeting notes section.
-- No recurring SharePoint mapping is created.
-- Agent returns a clear success response.
+## Test Scenario  
 
-## Test input
+### Input  
+User prompt:  
+"capture my 10am meeting"
 
-Record the exact user prompt used here:
+### Expected Behaviour  
 
-```text
-[Not yet tested — inspection stopped before live UJ1 execution]
-```
+1. Flow A returns:
+   - MatchCount = 1  
+   - CandidateList = empty  
 
-## Inspection status
+2. Topic:
+   - Automatically proceeds (no disambiguation required)  
+   - Displays meeting confirmation  
+     - Title  
+     - Start / End time  
+     - Location (if present)  
 
-Status:
+3. Flow B is invoked with:
+   - MeetingTitle  
+   - MeetingId  
+   - PageHtml  
+   - IsRecurring = false  
 
-```text
-NOT READY / FAILED INSPECTION
-```
+4. Flow B behaviour:
+   - OneNote section resolved (default meeting notes section)  
+   - New page created  
+   - No SharePoint mapping required  
 
-## Inspection finding
+5. Agent response:
+   - Confirms page creation  
+   - Provides clickable OneNote page link  
 
-During Phase 2 inspection, the current user-facing Meeting Capture topic was reviewed before running a live UJ1 test.
+---
 
-The topic inspected was:
+## Actual Result  
 
-```text
-Meeting Capture (v3 rebuild)
-```
+✅ Flow A returned:  
+- MatchCount = 1  
+- CandidateList = ""  
 
-within the agent:
+✅ Topic behaviour:  
+- No disambiguation triggered  
+- Meeting correctly identified and displayed  
 
-```text
-Teams → OneNote Meeting Capture
-```
+✅ Flow B inputs validated:  
+- MeetingTitle populated  
+- MeetingId populated  
+- PageHtml correctly generated  
+- IsRecurring = false  
 
-The topic currently uses the trigger:
+✅ Flow B execution:  
+- Section resolved successfully  
+- Page created successfully  
 
-```text
-A message is received
-```
+✅ Outputs returned:  
+- OutPageAction = PAGE_CREATED  
+- OutCreatedPageLink populated  
+- Agent summary returned correctly  
 
-The expected user-facing trigger phrases were not present, including:
+---
 
-```text
-Capture meeting notes
-Create meeting notes
-Take notes for my meeting
-Meeting capture
-```
+## Validation Outcome  
 
-The initial Flow A call is present:
+✅ **PASS**
 
-```text
-A1_Call_ToolA_InitialLookup
-```
+The UJ1 scenario executed successfully end-to-end with no errors.
 
-However, the visible Flow A inputs are currently hardcoded test values rather than dynamic user input.
+---
 
-Observed Flow A input values:
+## Evidence  
 
-```text
-SearchText = test
-StartDateTime = 2026-05-17T00:00:00
-EndDateTime = 2026-05-17T00:00:00
-SelectedNumber = ""
-```
+- Successful test run in Copilot Studio  
+- Flow A outputs validated via debug compose  
+- Flow B run history confirms PAGE_CREATED path  
+- OneNote page opened successfully via returned link  
 
-## Impact on UJ1 validation
+---
 
-UJ1 cannot yet validate real user request capture or dynamic meeting search behaviour.
+## Contract Validation  
 
-Because the topic is using hardcoded test values, the current topic cannot prove the intended UJ1 path:
+### Flow A Contract  
+✅ MatchCount correctly set to "1"  
+✅ CandidateList correctly set to ""  
 
-```text
-User prompt
-→ dynamic meeting search text
-→ Flow A SINGLE_MATCH
-→ SINGLE_MATCH topic routing
-→ Flow B one-off path
-→ OneNote page creation
-→ no recurring SharePoint mapping
-```
+### Flow B Contract  
+✅ MeetingTitle received and used  
+✅ MeetingId received and used  
+✅ PageHtml correctly passed and rendered  
+✅ Correct branch executed: PAGE_CREATED  
 
-## Failure classification
+---
 
-Failure layer:
+## Observations  
 
-```text
-Topic
-```
+- No retry or fallback logic triggered  
+- No ambiguity in meeting resolution  
+- Default OneNote section behaviour confirmed for one-off meetings  
+- End-to-end latency within acceptable range  
 
-Failure type:
+---
 
-```text
-Topic trigger / input capture / dynamic content mapping
-```
+## Controlled Baseline Decision  
 
-## Current assessment
+✅ UJ1 is confirmed stable  
 
-This is not yet a Flow A failure.
+- No amendments required  
+- No defects identified  
+- No contract changes required  
 
-This is not yet a Flow B failure.
+---
 
-The current finding is a topic readiness issue.
+## Baseline Status  
 
-The current topic appears to be a rebuild or test harness rather than a fully user-facing UJ1-ready Meeting Capture topic.
+✅ **BASELINED — LOCKED**
 
-Before live UJ1 validation can proceed, we need to confirm whether:
+UJ1 is approved as the authoritative implementation for:
 
-1. Meeting Capture (v3 rebuild)` is the intended production Meeting Capture topic, or
-2. another production-ready Meeting Capture topic exists, or
-3. this topic must be amended into a user-facing UJ1-ready topic.
+> One-off single meeting capture (single match scenario)
 
-## Test meeting
+---
 
-Record once live UJ1 testing begins:
+## Next Step  
 
-- Meeting title:
-- Meeting date/time:
-- Meeting type: one-off
-- Calendar used:
-- Expected OneNote section:
+Proceed to:
 
-## Evidence captured
+➡️ **UJ2 — Multiple Match Selection (disambiguation path)**  
 
-- Screenshot of current topic state: Yes
-- Flow A call visible: Yes
-- Hardcoded Flow A inputs visible: Yes
-- Flow A run reference: Not yet tested
-- Flow B run reference: Not yet tested
-- OneNote page link: Not yet created
-- SharePoint mapping checked: Not yet tested
-- Transcript captured: Not yet tested
+- Introduces numbered selection  
+- Second Flow A call (selected index)  
+- Pre-Flow B confirmation  
 
-## Result
-
-```text
-NOT READY / FAILED INSPECTION
-```
-
-## Actual behaviour
-
-Topic inspection found:
-
-- The topic exists.
-- Flow A is called through `A1_Call_ToolA_InitialLookup`.
-- The visible Flow A call uses hardcoded test values.
-- User-facing trigger phrases are not present.
-- Dynamic user search text capture is not yet confirmed.
-- UJ1 live validation should not proceed until topic readiness is clarified.
-
-## Notes
-
-This inspection confirms that the current issue is with topic readiness, not with Flow A or Flow B execution.
-
-No implementation changes should be made informally.
-
-The next step is to determine whether this topic is the intended production path or whether a separate production-ready topic exists.
-
-If `Meeting Capture (v3 rebuild)` is confirmed as the intended production topic, a controlled amendment should be raised before changing the topic trigger, user input capture, or Flow A input mappings.
-
-## Controlled amendment required
-
-Current status:
-
-```text
-To be assessed
-```
-
-Reason:
-
-A controlled amendment may be required if this topic is confirmed as the intended production Meeting Capture topic and must be updated to support dynamic user-facing UJ1 execution.
-
-Potential amendment area:
-
-- Meeting Capture topic trigger
-- User input capture
-- Flow A input mapping
-- UJ1 test readiness
-- Documentation / validation record
-
-## Next action
-
-Check whether another production-ready Meeting Capture topic exists in the `Teams → OneNote Meeting Capture` agent.
-
-If no other production-ready topic exists, raise a controlled UJ1 topic-readiness amendment before changing the topic.
+---
+``
