@@ -1,0 +1,32 @@
+# Session Handover - 2026-06-12 (evening)
+
+## TL;DR
+- Flow A ("PA - Resolve Meeting Selection - v1 Clean Build") is CONFIRMED CORRECT for UJ1. FA43 Respond to Agent output for "PTC Budget Review": status=OK, matchcount=1, isrecurring=false, seriesmasterid="", meetingtitle=PTC Budget Review.
+- FA12's item()?['type'] reference is technically wrong (field doesn't exist on this connector; should be item()?['recurrence']) but harmlessly evaluates to 'false' either way - low priority fix.
+- Topic's C7_Call_FlowA_Selection -> Flow B path WAS REACHED successfully. The suspected C11_Check_OutStatus "SUCCESS" vs "OK" mismatch is NOT the active blocker (still worth fixing later - two C11 nodes exist either side of C4_Check_MatchCount; the relevant one is downstream of C7).
+
+## CURRENT BLOCKER (new)
+Flow B run (Jun 12, 17:22 local) failed: Create_OneNote_Section failed: An item with this name already exists in this location.
+
+Root cause chain:
+1. "Condition Mapping Exists" (greater(int(if(empty(variables('varFinalMatchCount')),'0',variables('varFinalMatchCount'))),0)) evaluated False with ActionFailed - "No dependent actions succeeded" - something feeding varFinalMatchCount errored.
+2. Falls to else branch (CREATE_REQUIRED) -> tries Create_OneNote_Section.
+3. Section "Mtg - PTC Budget Review" already exists from earlier test -> 409.
+
+## Hypothesis
+varFinalMatchCount comes from the recurring-mapping SharePoint lookup (RecurringMeetingSectionMap by SeriesMasterId). For UJ1, SeriesMasterId = "" - the lookup query with an empty filter value may be erroring, leaving varFinalMatchCount unset.
+
+## Next steps
+1. Get code view of Condition_IsRecurring and whatever sets varFinalMatchCount.
+2. Check the Activity trace for the SAME Flow B run (Jun 12, 17:22) - expand the action(s) immediately before "Condition Mapping Exists" to find the actual failed action and its error message.
+3. Once root cause is found and fixed, manually delete duplicate "Mtg - PTC Budget Review" OneNote section(s) from prior failed runs (there may be 2: one with 'Mtg - ' prefix from the one-off path, one without prefix from the broken recurring path) so the next test run starts clean.
+4. Lower priority / cosmetic:
+   - FA12 item()?['type'] -> item()?['recurrence'] expression in Flow A.
+   - C11_Check_OutStatus (the one after C7_Call_FlowA_Selection) comparing OutStatus to "SUCCESS" - confirm actual value Flow A returns in status field is OK / INVALID_SELECTION / NO_MATCH / MULTIPLE_MATCHES (never SUCCESS), and update the topic condition to match "OK".
+
+## Confirmed-correct items (don't re-investigate)
+- Flow A trigger schema, variable init chain (FA01-FA10), candidate array build (FA12), single/multi/no-match branches (FA17-FA43), and the full Respond to Agent (FA43) coalesce wiring - all reviewed via screen recording, all correctly wired.
+- C7_Call_FlowA_Selection in the topic successfully invokes Flow A and receives the correct output; topic proceeds into Flow B (C10_Call_FlowB_Create_Page) - confirmed by the 409 error originating from Flow B, not a topic-level condition mismatch.
+
+## Working method note
+Screen recording + ffmpeg frame extraction (1 frame every 2s) worked well for bulk-reviewing Flow A's Designer/Code-view. Consider this for Flow B's Condition_IsRecurring and mapping-lookup logic next session.
