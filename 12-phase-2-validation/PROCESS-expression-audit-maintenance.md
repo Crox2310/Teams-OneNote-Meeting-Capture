@@ -1,246 +1,53 @@
-# Living Audit — Per-Action Expression Catalogue
+# Process Note: The Living Audit — Maintenance Instructions for Future Sessions
 
-See `PROCESS-expression-audit-maintenance.md` for the maintenance rules governing this document. Short version: this is current ground truth, not a session log. Update it the moment an expression changes in Designer, before closing out the session's handover note.
+## What this document is
 
-**Last updated:** 2026-06-20 (evening session)
-**Coverage:** Flow B (`PA - Resolve OneNote Meeting Section - v2 Clean Build`, flowId `ed112c88-b94b-f111-bec6-002248a38052`) — primary path complete. Flow A — only the four actions fixed/touched on 2026-06-20 are logged here; a full systematic pass of Flow A has not yet been done.
+This is a standing process instruction, not a dated session handover. Read it at the start of any session involving `living-audit.md` or `living-audit-topic.md` in this repo, alongside the most recent dated handover note.
 
-**Status key:** 🔴 confirmed bug, not fixed · 🟡 suspect/unconfirmed · 🟢 confirmed fixed and tested · ⚪ confirmed clean (no issue)
+There are two companion living documents this process note governs:
 
----
+- **`living-audit.md`** — the per-action expression catalogue for Flow A and Flow B. Current ground truth for every reviewed action's expression, organized by flow and by action, with a status flag per entry (🔴 confirmed bug · 🟡 suspect · 🟢 fixed and tested · ⚪ confirmed clean).
+- **`living-audit-topic.md`** — broader system documentation for the Copilot Studio Topic orchestration layer (which flow gets called when, with what inputs, branch structure, response messages, live-test status per user journey). Companion to the expression catalogue, not a replacement for it — the Topic document answers "what is this supposed to do and has it been verified," the expression catalogue answers "is this specific piece of code correct."
 
-## Flow B — Trigger
+This document (`PROCESS-expression-audit-maintenance.md`) only describes how to maintain both — it has no per-action or per-node content itself.
 
-### `When an agent calls the flow` 🔴
-Generic field names: `text`, `text_1`, `text_2`, `text_3`, `text_4` with display titles MeetingTitle / SeriesMaster / PageHtml / MeetingId / IsRecurring respectively (exact text_N→title mapping not yet 100% confirmed — verify via C8B/C10 input panel before editing).
-**Bug:** `Condition_IsRecurring` reads `triggerBody()?['IsRecurring']`, which does not exist as a key — the real key is `text` (or whichever text_N maps to the IsRecurring title). Confirmed via `Respond_to_agent`'s `outisrecurring: "@{triggerBody()?['text']}"` mapping.
-**Fix (not yet applied):** Change `Condition_IsRecurring`'s expression to read the correct generic key once confirmed.
+## Background
 
----
+Starting 2026-06-20, David and Claude began a full Code View audit of every action's expression across Flow A (`PA - Resolve Meeting Selection - v1 Clean Build`) and Flow B (`PA - Resolve OneNote Meeting Section - v2 Clean Build`). This was prompted by a recurring bug pattern discovered across multiple sessions: type mismatches and silent failures hiding in expressions that look fine in Designer's collapsed view but are visibly wrong in Code View. Three confirmed recurring patterns:
 
-## Flow B — Condition_IsRecurring
+1. **String-wrapped booleans** — comparisons like `"@true"` (a string literal) being checked against an evaluated boolean, or an entire expression wrapped in quotes as `"@greater(...)"` rather than evaluated natively. Also includes the related "missing `empty()` guard" variant: `coalesce(var, '0')` looks safe but only catches `null`, not `''` — so `int(coalesce(var, '0'))` still throws if `var` is an empty string. Confirmed in `Condition Should Create Page` (fixed, earlier session) and `Condition_Should_Write_Mapping` (root-caused 2026-06-20, fix drafted, not yet applied).
+2. **Blank/literal-`''` values** — `Set variable` or `Compose` actions with an empty or literal-string `''` Value/Inputs field instead of a real expression or `string('')`. Confirmed in multiple actions across both flows on 2026-06-14 and again on 2026-06-20 (`FA33A`, `FA34A` — same actions, second occurrence; ~15-20 further instances catalogued in Flow B on 2026-06-20, see `living-audit.md`).
+3. **Wrong/mismatched field names** — expressions reading a property name that doesn't exist on the source object (wrong casing, made-up field name, or a generic trigger field name like `text`/`text_1` being misread as a named field), silently returning null/false instead of erroring. Confirmed in `FA28A_Compose_OutIsRecurring`, `FA28B_Compose_OutSeriesMasterId` (both fixed 2026-06-20), and `Condition_IsRecurring`'s trigger-key bug in Flow B (root-caused 2026-06-20, fix not yet applied).
 
-### `Condition_IsRecurring` (the condition itself) 🔴
-```
-toLower(string(triggerBody()?['IsRecurring'])) is equal to "true"
-```
-Same bug as above — `triggerBody()?['IsRecurring']` always null. See trigger entry.
+On 2026-06-21, scope was extended upward to the Topic orchestration layer via `living-audit-topic.md`, after recognizing that several of the above bugs originate at the seam between the Topic and the flows (e.g. the trigger field mapping issue) — a seam that the expression catalogue alone, being flow-internal, can't fully document.
 
-### True branch
+The audit's purpose is to catch all remaining instances of these patterns in one pass, rather than continuing to discover them one at a time through live debugging — which is expensive in both time and live-system risk (see the connection-incident handover from 2026-06-20 evening).
 
-**`Compose Input SeriesMasterId`** ⚪ — clean, not yet transcribed verbatim.
+## The core instruction for future sessions
 
-**`Compose Input MeetingTitle`** ⚪ — clean, not yet transcribed verbatim.
+**Both `living-audit.md` and `living-audit-topic.md` are snapshots, not a live sync.** Each is only accurate as of the last time it was explicitly updated. Any session in which a connector/action/node is added, amended, or deleted in Designer or in Copilot Studio's authoring canvas — whether as a bug fix, a deliberate enhancement, a new step, or a removed one — MUST end with the relevant document being updated to reflect the change, before the session's handover note is finalized.
 
-**`Filter Existing Mapping`** ⚪
-- From: `value` (Get_items output)
-- Filter Query: `SeriesMasterId` is equal to `SeriesMasterId` (dynamic content, from Compose Input SeriesMasterId)
+This applies even to small or seemingly trivial edits, and applies equally to additions and deletions, not just amendments. The whole value of these documents is that they can be trusted as accurate; a single un-logged drift makes every future read of them less reliable.
 
-**`Compose ExistingPageSelfUrl`** ⚪ — `if(...)` expression, content not yet transcribed verbatim.
+**Which document to update:** flow-internal expression/action changes (Power Automate, Code View) go in `living-audit.md`. Topic-level changes (Copilot Studio authoring canvas — node structure, branch logic, trigger configuration, response message text, Topic-to-flow input/output mapping) go in `living-audit-topic.md`. Section 4 of `living-audit-topic.md` (the Topic-to-flow contract table) is the one place that deliberately straddles both — keep it in sync with `living-audit.md`'s trigger and Respond-to-agent sections when either changes.
 
-**`Compose PageDecision`** ⚪ — `if(...)` expression, content not yet transcribed verbatim.
+## What "updating the Living Audit" means in practice
 
-**`Compose Match Count`** ⚪ — `length(...)` expression, content not yet transcribed verbatim.
+When a connector/action/node changes during a session:
 
-**`varFinalExistingPageSelfUrl_1`** 🔴 — blank Value, `'Value' is required`.
+1. **Find or create its entry.** Both documents are organized top-to-bottom in execution order — `living-audit.md` by flow then by logical section then by action name as it appears in Designer; `living-audit-topic.md` by orchestration stage. If new, add the entry in the right place rather than appending to the end.
+2. **Amended:** replace the old expression/description with the new one. Update the status flag (e.g. 🔴 → 🟢 once fixed and tested, or ⚪ → 🟡 if a new edit introduces a question mark worth flagging; `living-audit-topic.md` also uses 🔵 for "designed but not yet live-tested").
+3. **New:** add a full entry — name, expression/parameters/description, status flag, and a one-line note on what it's for if not obvious from the name.
+4. **Deleted:** remove its entry entirely rather than leaving a stale reference. If the deletion is itself noteworthy, a one-line note in the surrounding text is enough — don't leave a "this used to exist" tombstone entry, since that defeats the point of the doc being current ground truth.
+5. **Add a one-line dated note** in the entry if the change is non-obvious (e.g. "2026-06-21: changed to use seriesMasterId per FA28A pattern fix").
+6. **Update the "Last updated" line and "Coverage"/"Status" lines** at the top of whichever document changed.
 
-**`varFinalPageDecision_1`** 🔴 — blank Value, `'Value' is required`.
+Claude should do this proactively near the end of any session where connectors or Topic structure changed — don't wait to be asked, but do confirm the wording with David before committing, the same way other handover docs are confirmed before upload (GitHub MCP write access has been unreliable for this repo across sessions — confirm whether it's working at the start of each session; if not, prepare the file via `bash_tool`/`create_file` for manual upload via the GitHub web UI, as has been the standing workaround. **Note (2026-06-21): manual uploads have previously resulted in this process note and `living-audit.md` swapping content/filenames — always verify the uploaded file's content matches its intended filename via `github:get_file_contents` after any manual upload, before assuming it landed correctly.**)
 
-**`varFinalMatchCount_1`** 🔴 — blank Value (`"value": ""`), `'Value' is required`. **This is the root cause feeding the `Condition_Should_Write_Mapping` crash** — see Condition Mapping Exists section below.
+## Why this matters going forward
 
-### False branch
+Without this discipline, these documents will silently go stale within a session or two, at which point they become actively misleading rather than just incomplete — worse than not having them at all, since future sessions (including different Claude instances, given memory does not persist between conversations) would trust outdated information as current. The dated handover notes capture *what happened in a session*; `living-audit.md` and `living-audit-topic.md` are meant to capture *current ground truth*, and only stay useful if treated as such.
 
-**`FB-F01 — Compose Input MeetingTitle (one-off)`** ⚪ — `concat(...)` expression, content not yet transcribed verbatim.
+## Pointer for future Claude instances
 
-**`Get Sections OneOff`** ⚪ — Notebook Key: Meeting Notes.
-
-**`Filter OneNote Section OneOff`** ⚪
-- From: `body/value`
-- Filter Query: `name` is equal to `Outputs` (dynamic)
-
-**`Compose Section Match Count OneOff`** ⚪ — `length(...)` expression.
-
-**`Condition Section Exists OneOff`** 🔴 (condition itself)
-```
-greater(...) is equal to true
-```
-Same bug family as `Condition_Should_Write_Mapping` — needs the expanded `greater(...)` content transcribed and checked for the same missing-`empty()`-guard pattern.
-
-True branch (section exists):
-- **`For each 1`** ⚪ — iterates `body/value`.
-- **`Set varTargetSectionPagesUrl OneOff Exists`** 🔴 — blank Value.
-- **`Set varOneNoteResolverResult Exists OneOff`** 🔴 — blank Value.
-
-False branch (section doesn't exist):
-- **`Create Section OneOff`** ⚪ — Notebook Key: Meeting Notes, Name: `Outputs` (dynamic).
-- **`Set varTargetSectionPagesUrl OneOff Created`** 🔴 — blank Value.
-- **`Set varOneNoteResolverResult Created OneOff`** 🔴 — blank Value.
-
----
-
-## Flow B — Condition Mapping Exists
-
-### `Condition Mapping Exists` (the condition itself) ⚪ — confirmed working pattern
-```
-if(empty(coalesce(variables('varFinalMatchCount'), '')), '0', greater(int(coalesce(variables('varFinalMatchCount'), '0')), 0)) is equal to true
-```
-(Reconstructed from description — exact text not yet pasted into this doc verbatim; functionally confirmed correct via comparison against the broken sibling below, since this one has the `empty()` guard and the sibling doesn't.)
-
-### True branch (mapping exists)
-- **`Compose Branch Result`** ⚪
-- **`Set varTargetSectionPagesUrl ExistingMapping`** ⚪ — has Value populated (not blank).
-- **`Set varOneNoteResolverResult ExistingMapping`** ⚪ — has Value populated (not blank).
-
-### False branch (no mapping)
-- **`Compose Branch Result NoMatch`** ⚪
-
-- **`Condition_Should_Write_Mapping`** 🔴 **CONFIRMED ROOT CAUSE OF LIVE CRASH (2026-06-20)**
-```json
-{
-  "type": "If",
-  "expression": {
-    "and": [
-      {
-        "equals": [
-          "@greater(\n  int(\n    coalesce(\n      variables('varFinalMatchCount'),\n      '0'\n    )\n  ),\n  0\n)",
-          "@true"
-        ]
-      }
-    ]
-  }
-}
-```
-**Bug:** `coalesce(variables('varFinalMatchCount'), '0')` only substitutes when the variable is **null**. `varFinalMatchCount_1` is initialized with `"value": ""` (empty string, not null) — see above. `coalesce` passes the empty string straight through, so `int('')` throws `InvalidTemplate` at runtime. This is the confirmed cause of tonight's manual-test crash.
-
-**Fix (drafted, not yet applied):**
-```
-greater(int(if(empty(variables('varFinalMatchCount')), '0', variables('varFinalMatchCount'))), 0)
-```
-Matches the working pattern used by `Condition Mapping Exists` above.
-
-  True branch:
-  - **`Send_an_HTTP_request_to_SharePoint`** ⚪ — confirmed clean once the guard above is fixed. Full body:
-    ```json
-    {
-      "Title": "Mapping",
-      "SeriesMasterId": "@{outputs('Compose_Input_SeriesMasterId')}",
-      "MeetingTitle": "@{outputs('Compose_Input_MeetingTitle')}",
-      "SectionPagesUrl": "@{variables('varTargetSectionPagesUrl')}",
-      "Status": "Active"
-    }
-    ```
-    POST to `_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items`. `runAfter: Compose_SafeSectionName: ["SUCCEEDED"]` — note casing bug, should be `"Succeeded"` (see Flow B-wide issues below).
-
-  False branch: empty (`"actions": {}`) — no action needed, by design.
-
-- **`Compose IgnoreSeriesMasterId`** 🔴 — `"inputs": "''"` (literal 2-character string, same bug family as historic FA33A-class bugs). Fix: should be a real expression or `string('')`, never confirmed what the intended value is — needs design decision, not just a syntax fix.
-- **`Compose PageRoute CreateRequired`** ⚪ — not yet transcribed verbatim.
-- **`Compose SectionDisplayName`** ⚪ — not yet transcribed verbatim.
-- **`Compose SafeSectionName`** ⚪ — not yet transcribed verbatim.
-
----
-
-## Flow B — True-branch page-creation chain (Condition Should Create Page)
-
-### `Condition Should Create Page` (the condition itself) 🟡 unconfirmed, suspect
-```
-equals(...) is equal to true
-```
-Structurally matches the same pattern family as the other two conditions above. The contents of the `equals(...)` chip have not yet been expanded/transcribed — needs checking for the same missing-guard issue before ruling it clean.
-
-### True branch (create page)
-- **`Create OneNote Page`** ⚪
-- **`Compose PageSelfUrl Created`** ⚪ — Inputs: `self` (dynamic).
-- **`HTTP Update SP PageSelfUrl`** ⚪ — POST to `_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items(...)`, headers include `IF-MATCH: *`, `X-HTTP-Method: MERGE`. Site: `Product SCLIF - https://jsainsbury.sharepoint.com/sites/coplt`.
-- **`Set varPageAction Created`** 🔴 — blank Value.
-- **`Set varOutputPageSelfUrl Created`** 🔴 — blank Value.
-- **`Compose UpdateHtmlFragment`** ⚪ — static HTML fragment with "Automated update" / "Meeting Capture Agent" text, no dynamic bug risk.
-- **`Compose ExistingPageId`** ⚪ — not yet transcribed verbatim.
-- **`Set varOutputPageLink Created`** 🔴 — blank Value. **This is THIS MORNING'S CONFIRMED FIX, found blank again tonight (2026-06-20) — genuine regression, not stale capture.** Intended expression (re-apply): `outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']` — note: verify this is the right output reference for `Create_OneNote_Page` (non-OneOff) vs `Create_Page_OneOff`, as this chain uses the former.
-
-### Condition Is Genuine Existing Page (nested inside False branch of Should Create Page, i.e. page-exists path)
-
-**`Condition Is Genuine Existing Page`** ⚪ — condition expression confirmed clean:
-```
-equals(...) is equal to true
-```
-True/False branches both present.
-
-True branch:
-- **`Get Sections Existing Branch`** ⚪
-- **`Create Page OneOff`** ⚪ — Notebook Key: Meeting Notes, Notebook section: `varTargetSectio...` (dynamic), Page Content: `PageHtml` (dynamic).
-- **`Set varOutputPageLink Created OneOff`** 🔴 — blank Value. Paired with the `Create Page OneOff` fix from earlier today (the one-off page-creation root cause). Intended expression: `outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']`.
-
-False branch / existing-section update path:
-- **`Filter Existing Section By Name`** ⚪ — From: `body/value`, Filter Query: `name` equal to `Outputs`.
-- **`Apply to each Existing Section`** ⚪ — iterates `Body`.
-  - **`Update page content Existing Branch`** ⚪ **confirmed clean (2026-06-20)** — Notebook Key: Meeting Notes, Notebook section: `id` (dynamic), Page Id: `Outputs` (dynamic). Update: Target `body`, Action `append`, Location `after`, Content `Outputs` (dynamic). No blank-value issues.
-- **`Set varPageAction UpdatedAppend`** 🔴 — blank Value.
-- **`Set varOutputPageLink Existing`** 🔴 — blank Value.
-
-(Also present per earlier audit, not yet individually re-confirmed this pass: `Set varOutputPageSelfUrl Existing`, `Compose UpdateHtmlFragment` [existing-page variant], `Compose ExistingPageId`.)
-
----
-
-## Flow B — Final response
-
-### `Compose AgentResponseSummary` ⚪
-`if(...)` chain checking `variables('varPageAction')` against `'Created'` / `'UpdatedAppend'` / `'ExistsNoCreate'`. **Logic itself is clean**, but currently always falls through to the else/generic message because `varPageAction` is never actually set (all the `Set varPageAction *` actions above are blank). Will self-resolve once those are fixed — no separate fix needed here.
-
-### `Compose SP Item Count` ⚪ — `length(...)` expression.
-
-### `Respond to the agent` ⚪ — full output schema confirmed clean:
-| Output | Source |
-|---|---|
-| OutIsRecurring | `IsRecurring` (trigger field, dynamic) |
-| OutMeetingTitle | `MeetingTitle` (trigger field, dynamic) |
-| OutSeriesMasterId | `SeriesMasterId` (trigger field, dynamic) |
-| OutPageHtml | `PageHtml` (trigger field, dynamic) |
-| OutSPItemCount | `int(...)` expression |
-| OutMatchCount | `varFinalMatchCo...` (dynamic, truncated in UI) |
-| (additional outputs below the fold not yet re-confirmed this pass) | |
-
-Good reference pattern: this action's match-count-style outputs use `coalesce(outputs(...), 0)` with a numeric fallback — cleaner than `Condition_Should_Write_Mapping`'s broken version. Useful as the template when fixing the blank-Value Set-variable actions above.
-
----
-
-## Flow B-wide issues (not tied to one action)
-
-🔴 **`runAfter` casing bug** — `"SUCCEEDED"` used instead of `"Succeeded"`. Confirmed repeated extremely consistently: all 8 init-variable actions, `Get_Sections_OneOff`, `Filter_OneNote_Section_OneOff`, `Compose_Section_Match_Count_OneOff`, `Create_Section_OneOff` and its Set-variable children, `Condition_Should_Write_Mapping`'s own runAfter, `Send_an_HTTP_request_to_SharePoint`'s runAfter (confirmed 2026-06-20 evening). Needs a flow-wide find/replace pass once other fixes are stable — low risk individually but high count.
-
-🟡 **Naming/type concern, unconfirmed** — `Create_OneNote_Page` and `Create_Page_OneOff` both pass `sectionId: "@variables('varTargetSectionPagesUrl')"`. Variable name suggests URL, field name suggests it should be a section ID. Not confirmed broken, just flagged as suspicious, especially since the variable is also sometimes left blank.
-
-⚪ **Dead conditional logic, low priority** — `Set_varTargetSectionPagesUrl_ExistingMapping`'s if/else branches are identical. Not a bug, just redundant; can be simplified whenever that action is next touched for another reason.
-
----
-
-## Flow A — actions touched 2026-06-20 (not a full Flow A pass)
-
-### `FA28A_Compose_OutIsRecurring` 🟢 fixed, confirmed live
-- Was: `coalesce(outputs('FA28_Compose_SingleEvent')?['IsRecurring'], 'false')` — read a nonexistent field.
-- Now: `if(empty(coalesce(outputs('FA28_Compose_SingleEvent')?['seriesMasterId'], '')), 'false', 'true')`
-- Verified: live Teams test, "QWE Meeting" (confirmed recurring series), returned `isrecurring: "true"`.
-
-### `FA28B_Compose_OutSeriesMasterId` 🟢 fixed, confirmed live
-- Was: `?['SeriesMasterId']` (wrong case).
-- Now: `?['seriesMasterId']`.
-- Verified: same live test as above, `seriesmasterid` populated correctly.
-
-### `FA33A_Set_varCandidateListText_Empty` 🟢 fixed
-- Was: blank/literal `''`.
-- Now: `string('')`.
-
-### `FA34A_Set_varCandidateIndex_One` 🟢 fixed
-- Was: blank.
-- Now: `1`.
-
-**Outstanding for Flow A:** a full systematic Code View pass (matching the depth done for Flow B above) has not yet happened. Given the same three bug patterns were found repeatedly in Flow B, Flow A should be assumed to have similar undiscovered issues until proven otherwise.
-
----
-
-## Open items / not yet covered by this audit
-
-- Trigger field → Topic variable mapping for `text`/`text_1`–`text_4` (needed before the `Condition_IsRecurring` fix can be safely applied).
-- Several `⚪ clean, not yet transcribed verbatim` entries above should be filled in with exact expression text next time they're opened, for completeness.
-- Full Flow A systematic pass.
-- Live re-test of all fixes together via a brand-new Teams thread (not the connection-incident-contaminated one).
+If you are picking up this project fresh: read this file first, then the most recent dated handover note, then `living-audit-topic.md` for the system-level picture, then `living-audit.md` for flow-level expression detail — in that order, broad to narrow. If either living document doesn't exist yet, that scope of the audit hasn't started — check the most recent handover for context on what would need covering first.
