@@ -1,119 +1,128 @@
-# Structural Fix Plan — 2026-06-21
+# Handover Notes — 2026-06-24
 
-This document supersedes pure bug-by-bug patching for the two highest-leverage, lowest-risk structural changes identified this session. Each fix below was stress-tested against a realistic future-failure scenario before being included — see `living-audit.md`'s open items and the session transcript for the reasoning. These are Designer-only changes; none require live Teams testing to verify correctness (verify in Power Automate's "Run flow" / Test pane instead), so they can be applied independent of the ongoing Flow B connectivity investigation.
+## Session summary
 
-**Sequencing recommendation:** apply these now, in parallel with — not blocked by — the Flow B "Flow not found or is turned off" connectivity investigation (see `living-audit-topic.md` Section 8), since that issue blocks live Teams testing but not Designer-level edits.
-
----
-
-## Structural Fix 1 — Eliminate the parallel-array hazard (Flow A)
-
-**Why this is structural, not a patch:** FA19's bug exists because two arrays carry "the candidates" — `FA09_Compose_CandidateArray` (raw, unfiltered) and `FA09A_Filter_CandidatesByTitle` (filtered, the one FA13's MatchCount and the user-facing candidate list are actually built from). Nothing currently prevents a future branch from referencing the wrong one, the same way FA19 did. Renaming the raw array makes the correct choice the obvious one for anyone building a new branch later, not just fixing today's instance.
-
-### Step 1a — Fix FA19's source array (the confirmed bug)
-**Action:** `FA19_Compose_SelectedEvent`
-**Current:**
-```
-outputs('FA09_Compose_CandidateArray')[outputs('FA16_Compose_SelectedIndex')]
-```
-**Change to:**
-```
-outputs('FA09A_Filter_CandidatesByTitle')[outputs('FA16_Compose_SelectedIndex')]
-```
-**Why this is safe:** FA18's range check already validates the selected index against `FA13_Compose_MatchCount`, which is `length(body('FA09A_Filter_CandidatesByTitle'))` — the filtered array's length. This change makes FA19 consistent with the bound already being enforced upstream. No new failure mode.
-
-**Verify after applying:** in Power Automate, use "Run flow" / Test with a UJ2-style scenario where the raw calendar return has more events than match the title filter (if no such test case exists naturally, this is itself worth creating as a standing test case). Confirm the selected event's title matches what the user actually picked from the displayed list.
-
-### Step 1b — Rename the raw array to make misuse visible (the structural part)
-**Action:** `FA09_Compose_CandidateArray`
-**Rename to:** `FA09_RAW_CandidateArray_DoNotUseDownstream`
-**Why this is safe:** Compose action display names don't affect execution — this is a labeling change only. Confirmed via full audit that only `FA09A`'s own `From` field references FA09 directly; no other action does. Renaming cannot break any existing binding.
-**Why this matters:** the next time a branch is built that needs "the candidates," the array name itself signals which one to use, rather than relying on institutional memory of this specific incident.
+This session applied the structural fixes from `STRUCTURAL-FIXES-2026-06-21.md` in Power Automate Designer. Flow A fixes are complete but not yet tested. Flow B fixes are partially complete, stopped at Fix 14/15 due to running out of screenshots.
 
 ---
 
-## Structural Fix 2 — Two mechanical conventions, applied flow-wide
+## Flow A — STATUS: All fixes applied, not yet tested
 
-**Why this is structural, not a patch:** both conventions below address bug *categories* found in 4+ independent locations each. Fixing instances one at a time (as has happened across at least three prior sessions for the literal-`''` pattern specifically — FA33A/FA34A were fixed once already and found broken again) doesn't prevent recurrence. Adopting and documenting the convention does, because it becomes a single grep-able rule rather than per-instance judgment.
+Working in **PA - Resolve Meeting Selection - v1 Clean Build**. All confirmed via Designer screenshots during this session. **None have been verified via Power Automate Test run yet.**
 
-### Convention A: no bare `''` or blank Value/Inputs fields — always `string('')` for genuinely-empty outputs, or the real intended expression otherwise
+| Fix | Action | Change | Status |
+|---|---|---|---|
+| Fix 1 | FA03 Init varOriginalUserSearchText | Added `@` prefix — now a proper expression chip | ✅ Applied |
+| Fix 2 | FA04 Init varDateContext | Added `@` prefix — same fix as FA03 | ✅ Applied |
+| Fix 3 | FA19 Compose SelectedEvent | Changed source array from `FA09_Compose_CandidateArray` to `FA09A_Filter_CandidatesByTitle` | ✅ Applied |
+| Fix 4 | FA09 Compose CandidateArray rename | Rename to `FA09_RAW_CandidateArray_DoNotUseDownstream` | ⚠️ Not confirmed — ask David |
+| Fix 5 | FA32 Compose OutCandidateList Single | Changed `''` to `string('')` expression chip | ✅ Applied |
+| Fix 6 | FA23 Compose OutCandidateList Resolved | Changed `''` to `string('')` expression chip | ✅ Applied |
+| Fix 7 | FA19B + FA19C + FA43 wiring | New Compose actions for IsRecurring/SeriesMasterId on selection-resolved path | ⚠️ Not yet done |
 
-**Mechanical check for future sessions:** in Code View, search for `"inputs": "''"` and any Set-variable/Compose action with an empty `"value"`/`"inputs"` field. Every match is a violation of this convention.
+### Fix 7 detail — still needed in Flow A
 
-Fixes to apply now:
+Inside FA18's true branch (alongside FA19-FA23), add two new Compose actions:
 
-| Action | Current | Fix |
-|---|---|---|
-| `FA32_Compose_OutCandidateList_Single` | `''` | `string('')` |
-| `FA23_Compose_OutCandidateList_Resolved` | `''` | `string('')` |
-| Flow B `Compose_IgnoreSeriesMasterId` | `''` | `string('')` — **note:** confirm this is actually meant to always be empty; if it's meant to carry data this is a design question, not a mechanical fix |
-| Flow B `varFinalExistingPageSelfUrl_1` | blank | restore real expression (not yet transcribed verbatim in `living-audit.md` — needs Designer lookup) |
-| Flow B `varFinalPageDecision_1` | blank | restore real expression (same) |
-| Flow B `varFinalMatchCount_1` | blank | restore real expression — **highest priority of this group**, this is the value that feeds `Condition_Should_Write_Mapping`'s crash |
-| Flow B `Set varTargetSectionPagesUrl OneOff Exists` | blank | restore real expression |
-| Flow B `Set varOneNoteResolverResult Exists OneOff` | blank | restore real expression |
-| Flow B `Set varTargetSectionPagesUrl OneOff Created` | blank | restore real expression |
-| Flow B `Set varOneNoteResolverResult Created OneOff` | blank | restore real expression |
-| Flow B `Set varPageAction Created` | blank | restore real expression (likely literal `'Created'`) |
-| Flow B `Set varOutputPageSelfUrl Created` | blank | restore real expression |
-| Flow B `Set varOutputPageLink Created` | blank | `outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']` — **confirmed correct expression from this morning's earlier fix; this is a regression, re-apply with confidence** |
-| Flow B `Set varOutputPageLink Created OneOff` | blank | same expression as above |
-| Flow B `Set varPageAction UpdatedAppend` | blank | restore real expression (likely literal `'UpdatedAppend'`) |
-| Flow B `Set varOutputPageLink Existing` | blank | restore real expression |
-
-### Convention B: numeric conversions must guard with `if(empty(...))`, never bare `coalesce()`
-
-`coalesce(var, default)` only substitutes when `var` is **null** — it does nothing when `var` is an empty string, which is exactly the failure mode that crashed Flow B live. The correct pattern already exists once in this project, working correctly, thirty lines from the broken version:
-
-**Working reference pattern** (`Condition Mapping Exists`, do not change, use as the template):
+**FA19B Compose OutIsRecurring Resolved** — expression:
 ```
-if(empty(coalesce(variables('varFinalMatchCount'), '')), '0', greater(int(coalesce(variables('varFinalMatchCount'), '0')), 0))
+if(empty(coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')), 'false', 'true')
 ```
 
-**Fix to apply** (`Condition_Should_Write_Mapping`, confirmed live-crash root cause):
-Current:
+**FA19C Compose OutSeriesMasterId Resolved** — expression:
+```
+coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')
+```
+
+Then open **FA43 Respond to agent** and update two coalesce chips:
+- **IsRecurring** field: add `outputs('FA19B_Compose_OutIsRecurring_Resolved')` as the **first** item (before FA28A)
+- **SeriesMaster** field: add `outputs('FA19C_Compose_OutSeriesMasterId_Resolved')` as the **first** item (before FA28B)
+
+These depend on Fix 3 (FA19) having been applied, which it has.
+
+---
+
+## Flow B — STATUS: Partially complete, stopped mid-session
+
+Working in **PA - Resolve OneNote Meeting Section - v2 Clean Build**.
+
+| Fix | Action | Change | Status |
+|---|---|---|---|
+| Fix 8 | Condition IsRecurring | Change trigger key from `['IsRecurring']` to `['text']` | ⚠️ Ask David — not confirmed |
+| Fix 9 | varFinalMatchCount 1 | Wired to Compose Match Count via Dynamic content | ✅ Applied |
+| Fix 10 | varFinalExistingPageSelfUrl 1 | Wired to Compose ExistingPageSelfUrl via Dynamic content | ✅ Applied |
+| Fix 10b | varFinalPageDecision 1 | Cleared invalid params, wired to Compose PageDecision | ✅ Applied |
+| Fix 11 | Condition_Should_Write_Mapping | Replace bare `coalesce()` with `if(empty(...))` guard | ⚠️ Ask David — not confirmed |
+| Fix 12 | Set varOutputPageLink Created | Re-apply OneNote page link expression | ⚠️ Ask David — not confirmed |
+| Fix 13 | Set varOutputPageLink Created OneOff | Apply OneNote page link expression for OneOff path | ⚠️ Ask David — not confirmed |
+| Fix 14 | Set varPageAction Created | Set to literal `Created` | ✅ Applied |
+| Fix 14 | Set varPageAction UpdatedAppend | Set to literal `UpdatedAppend` | ✅ Applied |
+| Fix 15 | Remaining blank Set-variable actions | Part way through | 🔄 In progress |
+
+### Fix 11 detail — Condition_Should_Write_Mapping (confirmed live-crash root cause)
+
+If not yet applied: open `Condition_Should_Write_Mapping`, edit the condition expression. Replace:
 ```
 greater(int(coalesce(variables('varFinalMatchCount'),'0')),0)
 ```
-Change to:
+With:
 ```
 greater(int(if(empty(variables('varFinalMatchCount')), '0', variables('varFinalMatchCount'))), 0)
 ```
-This matches the already-proven working pattern rather than inventing a new one — lower risk, since the logic has already been validated elsewhere in the same flow.
+This matches the working pattern used by `Condition Mapping Exists` thirty lines above it.
 
-**Also apply the same check to** `Condition Section Exists OneOff` (flagged as needing the same guard pattern, expression not yet fully expanded in `living-audit.md` — open this in Designer, confirm whether it has the same `coalesce`-without-`empty`-guard shape, and apply the same fix if so) and `Condition Should Create Page` (currently 🟡 unconfirmed/suspect, same family, not yet expanded).
+### Fix 12/13 detail — Set varOutputPageLink actions
 
-### Convention B, related fix — missing `@` expression prefix
+**Fix 12 — `Set varOutputPageLink Created`** (Condition Should Create Page → True branch):
+```
+outputs('Create_OneNote_Page')?['body']?['links']?['oneNoteWebUrl']?['href']
+```
+This is a confirmed regression — was fixed in an earlier session and found blank again. Re-apply with confidence. Verify the exact action name prefix matches your Designer.
 
-Same root cause (type-safety silently bypassed), different specific mechanism. Both confirmed via Designer screenshot this session (plain-text rendering instead of an expression chip):
+**Fix 13 — `Set varOutputPageLink Created OneOff`** (Condition Is Genuine Existing Page → True branch):
+```
+outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']
+```
 
-**FA03_Init_varOriginalUserSearchText**
-Current: `"value": "triggerBody()?['OriginalUserSearchText']"`
-Fix: `"value": "@triggerBody()?['OriginalUserSearchText']"`
+### Fix 15 detail — remaining blank Set-variable actions
 
-**FA04_Init_varDateContext**
-Current: `"value": "triggerBody()?['DateContext']"`
-Fix: `"value": "@triggerBody()?['DateContext']"`
+**Use Dynamic content tab** (not expression typing) for all of these — pick the output from the action immediately above each one in the flow.
 
-**Mechanical check for future sessions:** any Set-variable action whose Value renders as plain unstyled text in Designer (rather than a colored expression chip) is missing its `@` prefix.
+Actions needing Dynamic content wiring (expressions were never confirmed in audit):
+- `Set varOutputPageSelfUrl Created` — source: `Compose PageSelfUrl Created` above it
+- `Set varOutputPageLink Existing` — source: look at what sits above it in the existing-page update path
+- `Set varTargetSectionPagesUrl OneOff Exists` — inside For each 1 in Condition Section Exists OneOff True branch
+- `Set varOneNoteResolverResult Exists OneOff` — same branch
+- `Set varTargetSectionPagesUrl OneOff Created` — inside Condition Section Exists OneOff False branch
+- `Set varOneNoteResolverResult Created OneOff` — same branch
+
+**Important:** take a screenshot of each one before applying and share with Claude to confirm the correct expression before saving. These were always blank in the audit — their intended expressions were never captured.
 
 ---
 
-## What this plan deliberately does NOT include (sequencing decision, not oversight)
+## Verification — once all fixes applied
 
-**Consolidating the `Respond to the agent` field construction into a single object-build step** (the fix for FA43's missing-branch bug class) is a real structural improvement but was deliberately held back from this immediate pass — it requires restructuring FA19-26 and Flow B's equivalent response-building chain, and should be verified end-to-end via live Teams testing once built, which is currently blocked by the Flow B connectivity issue. Apply Structural Fixes 1 and 2 first; revisit this once Flow B connectivity is restored and FA19/FA43's individual fixes (drafted separately, see `living-audit.md`) are confirmed working live.
+### Flow A
+1. Power Automate → Test → Manual → Run flow
+2. Use a meeting title matching more than one calendar event (UJ2 multi-match scenario)
+3. In run history: confirm FA19 selected the right event; confirm FA03A DEBUG shows real values for OriginalUserSearchText and DateContext (not literal `triggerBody()?['...']` text)
 
-**The `runAfter` casing question** (`"SUCCEEDED"` vs `"Succeeded"`) remains deliberately unresolved — Flow A uses the same casing as Flow B throughout, which is evidence against this being a bug at all. Do not "fix" this until definitively confirmed against Power Automate's actual requirement.
+### Flow B
+1. Power Automate → Test → Manual → Run flow
+2. Use QWE Meeting values from the 2026-06-20 evening session
+3. Confirm `Condition_Should_Write_Mapping` no longer throws InvalidTemplate error
+4. Run Flow Checker — should show 0 `'Value' is required` errors
 
-**`FA12`'s IsRecurring derivation** and **`FA09A`'s fallback-source risk** remain open — both need a downstream-consumption confirmation before it's worth prioritizing a fix, per the existing open items in `living-audit.md`.
+### After both pass
+- Update `living-audit.md` — flip each fixed action from 🔴 to 🟢 with date
+- Then investigate the Flow B connectivity issue: both Topic call nodes C8B and C10 show "Flow not found or is turned off" in Copilot Studio Designer — this is the single blocker for all live Teams testing. See `living-audit-topic.md` Section 8 and `handover-2026-06-20-evening-connection-incident.md` for full context.
 
 ---
 
-## Verification checklist (Designer-only, no live Teams testing required)
+## Key documents (all in `12-phase-2-validation/`)
 
-After applying Structural Fixes 1 and 2:
-1. Flow A and Flow B Flow Checker — confirm 0 operation errors (previously seen 15 errors of exactly this `'Value' is required` shape; this checklist should clear all of them).
-2. Power Automate "Test" / "Run flow" — manually trigger Flow B with the QWE Meeting values used in the 2026-06-20 evening session, confirm `Condition_Should_Write_Mapping` no longer throws `int()` InvalidTemplate.
-3. Power Automate "Test" / "Run flow" — manually trigger Flow A with a UJ2-style multi-match scenario, confirm FA19 selects the event matching the user's actual numbered choice from the candidate list, not a different one from the unfiltered array.
-4. Update `living-audit.md` to flip each fixed action's status from 🔴 to 🟢, with a one-line "confirmed via manual Test run, 2026-06-XX" note per this project's existing convention.
-5. Only once 1-4 pass cleanly: proceed to the Flow B connectivity investigation (`living-audit-topic.md` Section 8) and, once resolved, live Teams re-test.
+- `living-audit.md` — per-action expression catalogue, current ground truth
+- `living-audit-topic.md` — Topic layer, including connectivity blocker details
+- `STRUCTURAL-FIXES-2026-06-21.md` — full structural fix plan this session worked through
+- `PROCESS-expression-audit-maintenance.md` — maintenance rules for living audit
+- `handover-2026-06-20-evening-connection-incident.md` — connectivity/consent loop incident context
