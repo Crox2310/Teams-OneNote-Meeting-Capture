@@ -17,83 +17,40 @@ Validate that the Meeting Capture agent correctly:
 
 ---
 
-## Test Scenario  
+## Test History
 
-### Input  
-User prompt:  
-"capture my 10am meeting"
+### Original validation (2026-06-20)
+✅ PASS — confirmed working end-to-end prior to the connection incident.
 
-### Expected Behaviour  
+### Re-validation required (2026-06-25)
+Following the systematic Flow A and Flow B audit and fix campaign (21–25 June), UJ1 required re-validation to confirm all fixes were compatible and the end-to-end flow still worked.
 
-1. Flow A returns:
-   - MatchCount = 1  
-   - CandidateList = empty  
+### Re-validation (2026-06-26) — PASS
+Full end-to-end test in a fresh Teams conversation thread at 07:33 UTC.
 
-2. Topic:
-   - Automatically proceeds (no disambiguation required)  
-   - Displays meeting confirmation  
-     - Title  
-     - Start / End time  
-     - Location (if present)  
+**Input:** "Capture meeting notes for TTT meeting"
 
-3. Flow B is invoked with:
-   - MeetingTitle  
-   - MeetingId  
-   - PageHtml  
-   - IsRecurring = false  
+**Flow A result:** ✅ Single match found — "TTT meeting"
 
-4. Flow B behaviour:
-   - OneNote section resolved (default meeting notes section)  
-   - New page created  
-   - No SharePoint mapping required  
+**Topic behaviour:** ✅ No disambiguation triggered — agent confirmed meeting found and creating page
 
-5. Agent response:
-   - Confirms page creation  
-   - Provides clickable OneNote page link  
+**Flow B result:** ✅ Section "Mtg - TTT meeting" created in OneNote, page "TTT meeting" created with correct content
+
+**Agent response in Teams:** ✅
+- "Your meeting TTT meeting has been found. Creating your OneNote page now..."
+- "Great news! Your meeting notes for TTT meeting have been saved to OneNote. Here's your page link: [valid SharePoint/OneNote link]"
+
+**OneNote page:** ✅ Opened successfully via returned link — section and page both confirmed
+
+**Key fix that unblocked this run:** `Set varOutStatus` action added to Flow B main path (between `Compose SP Item Count` and `Respond to the agent`), setting `varOutStatus = "OK"`. Without this, Flow B was completing successfully and creating the OneNote page, but returning `outstatus = ""` — causing the Topic's C8C/C11 check (`OutStatus = "OK"`) to route to the error message instead of the success message, despite the page having been created.
 
 ---
 
-## Actual Result  
+## Current Validation Outcome  
 
-✅ Flow A returned:  
-- MatchCount = 1  
-- CandidateList = ""  
+✅ **PASS — RE-BASELINED 2026-06-26**
 
-✅ Topic behaviour:  
-- No disambiguation triggered  
-- Meeting correctly identified and displayed  
-
-✅ Flow B inputs validated:  
-- MeetingTitle populated  
-- MeetingId populated  
-- PageHtml correctly generated  
-- IsRecurring = false  
-
-✅ Flow B execution:  
-- Section resolved successfully  
-- Page created successfully  
-
-✅ Outputs returned:  
-- OutPageAction = PAGE_CREATED  
-- OutCreatedPageLink populated  
-- Agent summary returned correctly  
-
----
-
-## Validation Outcome  
-
-✅ **PASS**
-
-The UJ1 scenario executed successfully end-to-end with no errors.
-
----
-
-## Evidence  
-
-- Successful test run in Copilot Studio  
-- Flow A outputs validated via debug compose  
-- Flow B run history confirms PAGE_CREATED path  
-- OneNote page opened successfully via returned link  
+UJ1 confirmed stable with all 2026-06 fixes applied.
 
 ---
 
@@ -107,7 +64,9 @@ The UJ1 scenario executed successfully end-to-end with no errors.
 ✅ MeetingTitle received and used  
 ✅ MeetingId received and used  
 ✅ PageHtml correctly passed and rendered  
-✅ Correct branch executed: PAGE_CREATED  
+✅ Correct branch executed: one-off path, section created  
+✅ OutStatus = "OK" returned  
+✅ OutCreatedPageLink populated and functional  
 
 ---
 
@@ -115,24 +74,15 @@ The UJ1 scenario executed successfully end-to-end with no errors.
 
 - No retry or fallback logic triggered  
 - No ambiguity in meeting resolution  
-- Default OneNote section behaviour confirmed for one-off meetings  
-- End-to-end latency within acceptable range  
-
----
-
-## Controlled Baseline Decision  
-
-✅ UJ1 is confirmed stable  
-
-- No amendments required  
-- No defects identified  
-- No contract changes required  
+- Default OneNote section behaviour confirmed for one-off meetings (section named "Mtg - TTT meeting")  
+- Connections must be refreshed in Copilot Studio → Settings → Connection Settings before each test session — they go Stale within hours of a publish
+- Tests must always be run in a fresh Teams conversation thread — reusing a previous thread causes BadGateway errors
 
 ---
 
 ## Baseline Status  
 
-✅ **BASELINED — LOCKED**
+✅ **BASELINED — LOCKED (re-baselined 2026-06-26)**
 
 UJ1 is approved as the authoritative implementation for:
 
@@ -148,7 +98,4 @@ Proceed to:
 
 - Introduces numbered selection  
 - Second Flow A call (selected index)  
-- Pre-Flow B confirmation  
-
----
-``
+- Pre-Flow B confirmation
