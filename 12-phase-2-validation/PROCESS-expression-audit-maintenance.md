@@ -1,208 +1,64 @@
-# Living Audit — Per-Action Expression Catalogue
+# Process — Maintaining the Living Audit
 
-See `PROCESS-expression-audit-maintenance.md` for the maintenance rules governing this document. Short version: this is current ground truth, not a session log. Update it the moment an expression changes in Designer, before closing out the session's handover note.
+This document governs how `living-audit.md` is kept up to date. It does not contain the audit itself — see `living-audit.md` for the current per-action expression catalogue.
 
-**Last updated:** 2026-06-25
-**Coverage:** Flow B (`PA - Resolve OneNote Meeting Section - v2 Clean Build`, flowId `ed112c88-b94b-f111-bec6-002248a38052`) — primary path complete. Flow A (`PA - Resolve Meeting Selection - v1 Clean Build`, flowId `d9d7ccf7-7d61-f111-a826-6045bde03856`) — fully confirmed, no remaining gaps.
+## Core principle
 
-**Status key:** 🔴 confirmed bug, not fixed · 🟡 suspect/unconfirmed · 🟢 confirmed fixed and tested · ⚪ confirmed clean (no issue)
+`living-audit.md` is **current ground truth, not a session log**. It should always reflect the actual state of Flow A and Flow B's expressions as they exist in Designer right now. It is not a diary of what happened in a given session — that's what the dated `handover-*.md` files are for.
 
-**Bug pattern reference**: (1) string-wrapped booleans / missing `empty()` guards, (2) blank or literal-`''` values, (3) wrong/mismatched field names, (4) missing `@` expression prefix, (5) **wrong-array indexing — FA19: indexing an unfiltered array using an index/count derived from a filtered array.**
+If a handover and the living audit ever disagree about the status of a specific action, the living audit is wrong and needs fixing immediately — don't let the discrepancy stand.
 
----
+## When to update
 
-## Flow B — Trigger
+Update `living-audit.md` **the moment an expression changes in Designer** — not at the end of the session, not "later." Specifically:
 
-### `When an agent calls the flow` ⚪ confirmed clean
-Mapping confirmed via Topic YAML (`living-audit-topic.md` Section 5): `text`=IsRecurring, `text_1`=MeetingTitle, `text_2`=SeriesMaster, `text_3`=PageHtml, `text_4`=MeetingId.
+- Immediately after fixing an expression via Code view or the expression editor, before moving to the next action.
+- Before closing out the session's handover note. The handover should never be the only place a fix is recorded — if it's not in the living audit too, the fix will get re-discovered and re-investigated in a future session.
+- Before marking any UJ (user journey) validation as passed, confirm every action it touched is reflected accurately in the audit.
 
----
+## Status key
 
-## Flow B — Condition_IsRecurring
+Use these four states consistently — do not invent new ones:
 
-### `Condition_IsRecurring` 🟢 confirmed fixed and published 2026-06-25
-```
-toLower(string(triggerBody()?['text'])) is equal to 'true'
-```
-Fix applied via Code view — expression JSON corrected to:
-```json
-"equals": [
-  "@toLower(string(triggerBody()?['text']))",
-  "'true'"
-]
-```
-Previously the entire condition sentence was stuffed as a string literal into the first `equals` element, causing a publish-time InvalidExpression error. Fixed by editing Code view JSON directly.
+- 🔴 confirmed bug, not fixed
+- 🟡 suspect/unconfirmed — flagged as a possible issue but not yet verified either way
+- 🟢 confirmed fixed and tested
+- ⚪ confirmed clean (no issue)
 
-### True branch
-**`Compose Input SeriesMasterId`** ⚪ **`Compose Input MeetingTitle`** ⚪ **`Filter Existing Mapping`** ⚪ — SeriesMasterId equal to SeriesMasterId (dynamic). **`Compose ExistingPageSelfUrl`** ⚪ **`Compose PageDecision`** ⚪ **`Compose Match Count`** ⚪
-**`varFinalExistingPageSelfUrl_1`** ⚪ — `@outputs('Compose_ExistingPageSelfUrl')` confirmed in Code view.
-**`varFinalPageDecision_1`** ⚪ — `@outputs('Compose_PageDecision')` confirmed in Code view.
-**`varFinalMatchCount_1`** ⚪ — `@outputs('Compose_Match_Count')` confirmed in Code view.
+An action should never be left unmarked. If you haven't looked at it yet, it isn't in scope for the current audit pass — don't guess a status.
 
-### False branch (one-off path)
-**`FB-F01`** ⚪ **`Get Sections OneOff`** ⚪ **`Filter OneNote Section OneOff`** ⚪ **`Compose Section Match Count OneOff`** ⚪
-**`Condition Section Exists OneOff`** 🟡 — `greater(...) equal to @true` pattern, same family as other conditions. Not yet re-expanded this session to confirm fix status.
-True: **`For each 1`** ⚪
-- **`Set varTargetSectionPagesUrl OneOff Exists`** 🟢 fixed 2026-06-25 — `items('For_each_1')?['pagesUrl']`
-- **`Set varOneNoteResolverResult Exists OneOff`** 🟢 fixed 2026-06-25 — `ExistingSection`
-False: **`Create Section OneOff`** ⚪
-- **`Set varTargetSectionPagesUrl OneOff Created`** 🟢 fixed 2026-06-25 — `outputs('Create_Section_OneOff')?['body']?['pagesUrl']`
-- **`Set varOneNoteResolverResult Created OneOff`** 🟢 fixed 2026-06-25 — `CreatedSection`
+## What counts as "confirmed"
 
----
+Before marking anything 🟢 or ⚪, verify it through at least one of:
 
-## Flow B — Condition Mapping Exists
+- The expression is visible and correct in the Designer expression editor (chip or tooltip), **or**
+- The raw JSON is visible and correct in Code view, **or**
+- A live test run's actual input/output values were inspected in Activity → Run results and matched expectation.
 
-### `Condition Mapping Exists` ⚪ working pattern
-```
-if(empty(coalesce(variables('varFinalMatchCount'), '')), '0', greater(int(coalesce(variables('varFinalMatchCount'), '0')), 0)) is equal to true
-```
+A status based on memory of "I think I fixed that already" is not confirmed — re-check it in Designer or Code view before changing its mark. This is exactly the kind of drift that produced the P/N navigation bug: multiple fixes were believed to be live but hadn't actually propagated to production.
 
-True: **`Compose Branch Result`** ⚪, **`Set varTargetSectionPagesUrl ExistingMapping`** ⚪, **`Set varOneNoteResolverResult ExistingMapping`** ⚪.
+## Bug pattern reference
 
-False:
-**`Compose Branch Result NoMatch`** ⚪
-**`Condition_Should_Write_Mapping`** 🟢 confirmed fixed and published 2026-06-25
-```
-greater(int(if(empty(variables('varFinalMatchCount')), '0', variables('varFinalMatchCount'))), 0)
-```
-Previously crashed with `int('')` when `varFinalMatchCount` was empty string. Fixed with `empty()` guard.
-True branch: **`Send_an_HTTP_request_to_SharePoint`** ⚪ clean. POST `_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items`.
-False: empty, by design.
-**`Compose IgnoreSeriesMasterId`** 🟡 — literal `''` pattern, low priority, not yet fixed.
-**`Compose PageRoute CreateRequired`** ⚪ **`Compose SectionDisplayName`** ⚪ **`Compose SafeSectionName`** ⚪
+When flagging or fixing an issue, tag it against this list where it applies — this makes it easier to spot when the same root cause is recurring across multiple actions:
 
----
+1. String-wrapped booleans / missing `empty()` guards
+2. Blank or literal-`''` values
+3. Wrong/mismatched field names
+4. Missing `@` expression prefix
+5. Wrong-array indexing — indexing an unfiltered array using an index/count derived from a filtered array (or vice versa)
+6. Parameter/sentinel mismatch — a value passed by the Topic that the Flow's condition logic doesn't recognize (e.g. a direction letter landing in a field only built to handle numbers or a fixed sentinel string)
 
-## Flow B — True-branch page-creation chain
+Extend this list as new patterns are found rather than describing a new bug from scratch each time — a shared taxonomy makes cross-flow audits faster.
 
-### `Condition Should Create Page` 🟡 unconfirmed, suspect — same family as other conditions, not yet expanded.
+## Format conventions
 
-True: **`Create OneNote Page`** ⚪, **`Compose PageSelfUrl Created`** ⚪, **`HTTP Update SP PageSelfUrl`** ⚪
-- **`Set varPageAction Created`** 🟡 — not confirmed blank or fixed this session, needs check
-- **`Set varOutputPageSelfUrl Created`** 🟢 fixed 2026-06-25 — `outputs('Compose_PageSelfUrl_Created')`
-- **`Compose UpdateHtmlFragment`** ⚪, **`Compose ExistingPageId`** ⚪
-- **`Set varOutputPageLink Created`** 🟢 confirmed already fixed — `outputs('Create_OneNote_Page')?['body']?['links']?['oneNoteWebUrl']?['href']`
+Follow the structure already established in `living-audit.md`:
 
-### Condition Is Genuine Existing Page ⚪ clean, both branches present.
-True: **`Get Sections Existing Branch`** ⚪, **`Create Page OneOff`** ⚪, **`Set varOutputPageLink Created OneOff`** 🟡 — not confirmed this session.
-False: **`Filter Existing Section By Name`** ⚪, **`Apply to each Existing Section`** ⚪ → **`Update page content Existing Branch`** ⚪
-- **`Set varPageAction UpdatedAppend`** 🟡 — not confirmed this session
-- **`Set varOutputPageLink Existing`** 🟢 fixed 2026-06-25 — `outputs('Compose_ExistingPageSelfUrl')`
+- Group by flow, then by the order actions actually run in (trigger → variable setup → branching → response).
+- Reference actions by their exact Designer name (e.g. `FA16 Compose SelectedIndex`), bolded, followed by the status icon.
+- Where a fix was applied, show the corrected expression in a code block and a one-line note on what was wrong before.
+- Keep an "Open items / not yet covered by this audit" section at the end for anything flagged but not yet resolved — this is the actual backlog, not a place fixes go to be forgotten.
 
----
+## Ownership
 
-## Flow B — Final response
-
-**`Compose AgentResponseSummary`** ⚪ logic clean.
-**`Compose SP Item Count`** ⚪
-**`Respond to the agent`** ⚪ — full 20-output schema, see `living-audit-topic.md` Section 5 for the complete confirmed list.
-
----
-
-## Flow B-wide issues
-
-🟡 **`runAfter` casing** — `"SUCCEEDED"` vs `"Succeeded"`. **STATUS UNRESOLVED:** Flow A and Flow B actions use `"SUCCEEDED"` consistently in Code view. Do not action any fix until casing is definitively confirmed against Power Automate's actual requirement. Not causing live failures currently.
-🟡 **Naming/type concern** — `sectionId` fields receive a variable named `varTargetSectionPagesUrl`; not confirmed broken.
-⚪ **Dead conditional logic** — `Set_varTargetSectionPagesUrl_ExistingMapping`'s branches are identical, low priority.
-
----
-
-## Flow A — Trigger
-
-### `When an agent calls the flow` ⚪ confirmed clean
-Self-documented schema: `text`=UserSearchText, `text_1`=InSelectedNumber, `text_2`=OriginalUserSearchText, `text_3`=DateContext, `text_4`=MaxCandidates. Matches Topic bindings exactly. Topic sends `InSelectedNumber` as literal `" "` on first call to satisfy the `required` constraint — deliberate, not a bug.
-
----
-
-## Flow A — Initial variable setup (FA01–FA10)
-
-**`FA01`** ⚪ — `triggerBody()?['UserSearchText']`.
-**`FA02`** ⚪ — defensively guarded against missing/empty/quoted-empty, good reference pattern.
-**`FA03`** 🟢 confirmed fixed — verified via Designer: dynamic content chip showing `triggerBody()?['OriginalUserSearchText']` correctly bound. Was previously listed as 🔴 missing `@` prefix but fix was already applied before this session.
-**`FA04`** 🟢 confirmed fixed — verified via Designer: `DateContext` chip correctly bound to `triggerBody()?['DateContext']`. Same as FA03.
-**`FA05`** ⚪ — correctly prefixed.
-**`FA03A DEBUG`** ⚪
-**`FA06`** ⚪ **`FA07`** ⚪ — StartOfDayUtc/EndOfDayUtc, clean.
-**`FA08`** ⚪ — date range correct; `calendarId` hardcoded (design note, not a bug).
-**`FA08A DEBUG`** ⚪ **`FA09`** ⚪ — `body(...)?['value']`, clean.
-
----
-
-## Flow A — Candidate filtering and array build (FA09A–FA13)
-
-**`FA09A Filter CandidatesByTitle`** 🟡 suspect, likely dormant — fallback to `text_2` (OriginalUserSearchText) if `text` (UserSearchText) empty; fallback is dead code under normal conditions.
-**`FA10`** ⚪ — empty array init.
-**`FA12 Append to array varCandidates`** 🟡 — `IsRecurring` derived from `equals(item()?['type'], 'occurrence')` only; misses `exception` and `seriesMaster` types. Needs confirming whether FA28A's seriesMasterId-presence check supersedes this field downstream.
-**`FA13`** ⚪ — `length(body('FA09A...'))`, clean.
-
----
-
-## Flow A — Match-count branching (FA27–FA43B)
-
-**`FA27`** ⚪ `equals(outputs('FA13...'), 0)`. NO_MATCH branch (FA27B–H) — all ⚪ clean.
-**`FA27A`** ⚪ `equals(outputs('FA13...'), 1)`.
-
-Single-match (true): **`FA28`** ⚪, **`FA28A`** 🟢 confirmed fixed live, **`FA28B`** 🟢 confirmed fixed live, **`FA29`** ⚪, **`FA30`** ⚪, **`FA31`** ⚪
-**`FA32`** 🟢 confirmed fixed and published 2026-06-25 — `string('')` expression chip confirmed in Designer.
-
-Multi-match (false): **`FA33A`** 🟢 fixed live, **`FA34A`** 🟢 fixed live, **`FA35`/`FA36`/`FA37`** ⚪ all clean, **`FA38`/`FA39`/`FA40`** ⚪ clean, **`FA41`/`FA42`/`FA43A`/`FA43B`** ⚪ all clean.
-
----
-
-## Flow A — FA14–FA26
-
-**`FA14 Compose CandidateList`** ⚪ **`FA15 Compose IsSelectionMode`** ⚪ **`FA17 Condition IsSelectionMode`** ⚪ **`FA16 Compose SelectedIndex`** ⚪ **`FA18 Condition SelectedIndexInRange`** ⚪
-
-**`FA19 Compose SelectedEvent`** 🟢 confirmed fixed and published 2026-06-25
-```
-outputs('FA09A_Filter_CandidatesByTitle')[outputs('FA16_Compose_SelectedIndex')]
-```
-Previously indexed `FA09_Compose_CandidateArray` (unfiltered) — now correctly indexes `FA09A_Filter_CandidatesByTitle` (filtered). Verified via Designer expression editor tooltip.
-
-**`FA20 Compose OutMeetingTitle`** ⚪ **`FA21 Compose OutCalendarEventId`** ⚪ — clean; now correctly inherit from fixed FA19.
-
-**`FA22 Compose OutMatchCount_Resolved`** ⚪ — literal `1`, clean.
-
-**`FA23 Compose OutCandidateList_Resolved`** 🟢 confirmed fixed and published 2026-06-25 — `string('')` expression chip confirmed in Designer.
-
-Error/out-of-range branch: **`FA24`** ⚪ **`FA25`** ⚪ **`FA26`** ⚪ — all clean.
-
-**`FA19B Compose OutIsRecurring Resolved`** 🟢 confirmed fixed and published 2026-06-25
-```
-if(empty(coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')), 'false', 'true')
-```
-Verified via Designer expression editor tooltip.
-
-**`FA19C Compose OutSeriesMasterId Resolved`** 🟢 confirmed fixed and published 2026-06-25
-```
-coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')
-```
-Verified via Designer expression editor tooltip.
-
----
-
-## Flow A — FA43 Respond to agent
-
-**`FA43 Respond to agent`** ⚪ fully confirmed clean 2026-06-25.
-
-Seven-field output schema: status, matchcount, candidatelist, meetingtitle, calendareventid, isrecurring, seriesmasterid.
-
-**`IsRecurring`** — `outputs('FA19B_Compose_OutIsRecurring_Resolved')` confirmed via Designer tooltip. Direct reference to FA19B (no coalesce needed — FA19B always returns 'false' or 'true').
-
-**`SeriesMaster`** — `outputs('FA19C_Compose_OutSeriesMasterId_Resolved')` confirmed via Designer tooltip. Direct reference to FA19C.
-
-All other fields coalesce across appropriate branch outputs — previously audited as clean.
-
----
-
-## Open items / not yet covered by this audit
-
-- `FA12`'s IsRecurring derivation — confirm whether FA28A's seriesMasterId-presence check supersedes this field downstream before prioritising a fix.
-- `FA09A`'s fallback-source risk — tied to the Topic-level `OriginalUserSearchText` rebinding issue in `living-audit-topic.md`.
-- `Condition Section Exists OneOff` — `greater(...) equal to @true` pattern not yet re-expanded; mark as 🟡 pending verification.
-- `Set varPageAction Created`, `Set varPageAction UpdatedAppend`, `Set varOutputPageLink Created OneOff` — not confirmed clean or broken this session; needs a check pass.
-- `Compose IgnoreSeriesMasterId` — literal `''`, low priority, not yet fixed.
-- `runAfter` casing — unresolved, see Flow B-wide issues.
-- Live UJ1 re-test pending — both flows published 2026-06-25, connections confirmed Connected. Test in a brand new Teams thread.
-- UJ2, UJ3, UJ4 — all Flow A fixes now applied; UJ2/UJ3/UJ4 are theoretically unblocked pending UJ1 baseline confirmation.
+Whoever makes a change in Designer is responsible for updating the audit before ending the session. If a session runs out of time before the audit can be updated, say so explicitly in that session's handover note (e.g. "Living audit not yet updated for FA15/FA16 changes made this session") so the next session knows not to trust the audit blindly for those actions.
