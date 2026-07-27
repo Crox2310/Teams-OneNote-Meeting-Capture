@@ -1,9 +1,8 @@
-
 # Flow B — `Condition Is Genuine Existing Page` Structurally Unreachable
 
 **Date:** 2026-07-27
 **Method:** Live test of AMEND-2026-07-27-001's fixes (re-capturing a meeting with an existing page), followed by a targeted Peek Code check of `Set_varOneNoteResolverResult_Exists_OneOff` after the live run showed `Condition Is Genuine Existing Page` evaluating False. Cross-checked against every other `varOneNoteResolverResult`-setting action already captured in `2026-07-27-flow-b-outstatus-trace.md`.
-**Status:** Root cause confirmed. This condition cannot currently evaluate True via any code path in Flow B. Not yet fixed — write-up only, pending a design decision (see Section 4).
+**Status:** Root cause confirmed, and real-world impact now confirmed live (see Section 3a) — this defect is actively creating duplicate OneNote pages. Not yet fixed — write-up only, pending a design decision (see Section 4).
 
 ---
 
@@ -56,6 +55,14 @@ If this condition can never be True, then Flow B's False branch — `Create_Page
 
 This has not yet been confirmed by checking actual OneNote content (e.g. whether repeated captures of the same meeting have produced multiple pages) — recommended as the first verification step before deciding on a fix.
 
+## 3a. Real-world impact confirmed live
+
+To confirm, "HoP - Focus Time" (a recurring meeting, section "Mtg - HoP - Focus Time") was deliberately re-captured for the same occurrence (27 Jul 2026) it had already been captured for earlier in the session. The agent responded with a normal-looking success message and a page link, giving no indication anything was wrong.
+
+Checking the OneNote section directly afterward showed **two separate pages both dated "27 Jul 2026"** under "Mtg - HoP - Focus Time" (alongside the unrelated, correctly-separate "3 Aug 2026" occurrence). This confirms the predicted consequence exactly: the recapture did not update the existing 27 Jul page, it silently created a duplicate.
+
+This confirms the defect is real-world impacting today, not merely theoretical, and affects the recurring path as well as the one-off path (this test used a recurring meeting) — meaning the recurring-side equivalents of `varOneNoteResolverResult` (`"ExistingMapping"`, `"ExistingSection"`, `"CreatedSection"`) are equally unable to satisfy `Condition Is Genuine Existing Page`, consistent with Section 2's table.
+
 ## 4. Not yet resolved
 
 - The one-off "section created" branch's equivalent action was not traced this session — worth checking whether it has the same missing-value defect or a different (but still non-`"Exists"`) value.
@@ -68,8 +75,9 @@ This defect was found via the same trace exercise being done ahead of the `OutSt
 
 ## 6. Suggested next steps
 
-1. Check actual OneNote content for evidence of duplicate pages from repeated captures of the same meeting (fastest way to confirm real-world impact).
+1. ~~Check actual OneNote content for evidence of duplicate pages from repeated captures of the same meeting~~ — **done, confirmed, see Section 3a.**
 2. Trace the untraced one-off "section created" branch to complete the picture.
 3. Make the design decision in Section 4 (restore `"Exists"` literally, vs redesign the condition around real values).
-4. Fix and live-test, following the controlled amendment process.
-5. Log as a new amendment once fixed — this document is a trace/investigation record only.
+4. Fix and live-test, following the controlled amendment process. Given confirmed real-world impact (silent duplicate page creation on every recapture of an existing meeting, recurring or one-off), this should be treated as a priority fix rather than deferred alongside the `OutStatus` build.
+5. Consider a one-off cleanup pass to identify and remove any other duplicate pages already created by this defect across the project's history, since it appears to have been present since this branch was originally built.
+6. Log as a new amendment once fixed — this document is a trace/investigation record only.
