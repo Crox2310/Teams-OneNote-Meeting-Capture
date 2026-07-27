@@ -1,3 +1,4 @@
+
 # Amendment Log
 
 ## Purpose
@@ -467,3 +468,54 @@ Yes
 ### Status
 
 Retested — confirmed 2026-07-20, see `2026-07-20-date-jump-feature-and-uj-validation.md`. Follow-up build item (reword/retry + Stop) remains open, not yet started.
+
+---
+
+### Amendment ID
+
+AMEND-2026-07-27-001
+
+### Amendment title
+
+Flow B "page already exists" branch — empty-string SetVariable defects and mislabeled `varPageAction`
+
+### Reason for amendment
+
+While tracing Flow B's full structure ahead of building `OutStatus` differentiation, two defects were found in `Condition Should Create Page`'s False branch (the "page already exists, update it" path):
+
+1. `Set_varPageAction_ExistsNoCreate` and `Set_varOutputPageSelfUrl_Existing` were both set to an empty string (`""`), and both displayed a live "Invalid parameters" error on the Designer canvas ("'Value' is required"). The flow had clearly published and run successfully with these values at some point, but current Designer validation no longer accepts an empty string for a `SetVariable` action — a latent risk if either action was ever opened and re-saved.
+2. `Set_varPageAction_UpdatedAppend`, on the nested "genuine existing page, append an update note" path, set `varPageAction` to `"Created"` — mislabeled, since this branch updates an existing page rather than creating one. This meant downstream consumers of `varPageAction` (including the planned `OutStatus`/response messaging work) could not distinguish a genuine new-page creation from an existing-page update.
+
+### Affected area
+
+- Flow B
+
+### Affected user journey
+
+- Regression (affects response accuracy on any journey that updates rather than creates a page — most directly UJ1/UJ3 re-capture scenarios)
+
+### Affected baseline files
+
+- None beyond the flow definition itself.
+
+### Required design correction
+
+`varPageAction` values must accurately distinguish "created a new page" from "updated an existing page," since this will feed the `OutStatus`/response-messaging work planned next. `SetVariable` actions should not rely on empty-string values where a real fallback is available.
+
+### Required build correction
+
+- `Set_varPageAction_ExistsNoCreate`: `""` → `"Updated"`
+- `Set_varOutputPageSelfUrl_Existing`: `""` → `variables('varFinalExistingPageSelfUrl')` (via dynamic content picker)
+- `Set_varPageAction_UpdatedAppend`: `"Created"` → `"Updated"`
+
+### Required test update
+
+Confirm both previously-flagged "Invalid parameters" warnings are cleared in the Designer and Flow checker, and that Publish succeeds with a green banner. Live functional retest of the existing-page update path (UJ1/UJ3 re-capture) not yet performed — recommended before relying on `varPageAction`'s new values in the `OutStatus` build.
+
+### SharePoint mirror update required
+
+No
+
+### Status
+
+Applied — all three values changed and flow published successfully 2026-07-27, see `2026-07-27-flow-b-outstatus-trace.md`. Not yet retested via a live end-to-end run; flagged as a prerequisite check before the `OutStatus` build consumes these values.
