@@ -518,4 +518,57 @@ No
 
 ### Status
 
-Applied — all three values changed and flow published successfully 2026-07-27, see `2026-07-27-flow-b-outstatus-trace.md`. Not yet retested via a live end-to-end run; flagged as a prerequisite check before the `OutStatus` build consumes these values.
+Retested — the "Invalid parameters" warnings were confirmed cleared, `varOutputPageSelfUrl` confirmed returning a real URL, and `varPageAction` confirmed correctly set. Live end-to-end retest of the update-existing-page path completed as part of AMEND-2026-07-27-002 below (both fixes share the same test scenario). Closed.
+
+---
+
+### Amendment ID
+
+AMEND-2026-07-27-002
+
+### Amendment title
+
+`Condition Is Genuine Existing Page` structurally unreachable — two `varOneNoteResolverResult` SetVariable actions missing their value, causing silent duplicate OneNote pages on every recapture of an existing meeting
+
+### Reason for amendment
+
+`Condition Is Genuine Existing Page` (Flow B) — which gates whether an "automated update" note is appended to a genuinely pre-existing OneNote page, versus falling through to fresh page creation — could never evaluate True on any code path. Its expression checked for the literal string `'Exists'`, but no action anywhere in Flow B ever set `varOneNoteResolverResult` to that value; the closest real values in use were `"ExistingMapping"`, `"ExistingSection"`, and `"CreatedSection"`.
+
+A first fix attempt changed the condition to check for the real values in use (`contains(createArray('ExistingMapping','ExistingSection'), variables('varOneNoteResolverResult'))`) but was found insufficient on live retest: two of the four `varOneNoteResolverResult`-setting actions (`Set varOneNoteResolverResult ExistingMapping` and `Set_varOneNoteResolverResult_Exists_OneOff`) were subsequently found via Peek Code to have no `value` key at all — they set nothing. The pattern was systematic: every action representing "something was found to already exist" was missing its value; every "something was just created" action had one set correctly.
+
+Real-world impact was confirmed live before any fix was applied: recapturing an already-captured recurring meeting ("HoP - Focus Time", 27 Jul 2026 occurrence) created a second, then (after the insufficient first fix) a third duplicate OneNote page, plus one stray "Untitled Page," none of which were flagged to the user — the agent reported normal success each time.
+
+### Affected area
+
+- Flow B
+- OneNote
+
+### Affected user journey
+
+- Regression (affects every journey that recaptures an already-captured meeting — UJ1 and UJ3 most directly; likely present since this branch was first built, so historical OneNote content from any journey may contain undetected duplicates)
+
+### Affected baseline files
+
+- None beyond the flow definition itself.
+
+### Required design correction
+
+`Condition Is Genuine Existing Page` must check against the real values `varOneNoteResolverResult` can hold, not an unused literal. Both "found existing" `SetVariable` actions must actually populate the variable, matching the naming convention already used by their "just created" sibling actions.
+
+### Required build correction
+
+- `Condition Is Genuine Existing Page` expression: `equals(variables('varOneNoteResolverResult'), 'Exists')` → `contains(createArray('ExistingMapping', 'ExistingSection'), variables('varOneNoteResolverResult'))`
+- `Set varOneNoteResolverResult ExistingMapping`: added `"value": "ExistingMapping"` (previously missing entirely)
+- `Set_varOneNoteResolverResult_Exists_OneOff`: added `"value": "ExistingSection"` (previously missing entirely; confirmed present with the correct value at time of the second fix pass, cause of the intermediate state unclear)
+
+### Required test update
+
+Live recapture of the same already-captured meeting occurrence, confirming via the Flow B Activity trace that `Condition Is Genuine Existing Page` evaluates True and `Update_page_content_Existing_Branch` actually executes, and confirming directly in OneNote that no new page is created (page count for that occurrence stays the same, existing page shows the appended "Automated update" note). Recommended addition to the UJ1/UJ3 test scripts: an explicit "recapture an already-captured meeting" scenario, since this defect was invisible to every prior test that only tested first-time capture.
+
+### SharePoint mirror update required
+
+Yes — flag this failure pattern (a `SetVariable` action named as though it sets a value, but with no `value` key at all) as a connector learning; it's now been found three times in this project (`Set_varOneNoteResolverResult_Exists_OneOff`, `Set varOneNoteResolverResult ExistingMapping`, and the two empty-string cases in AMEND-2026-07-27-001), suggesting it's worth a dedicated Designer sweep of all `SetVariable` actions across both flows to check for others.
+
+### Status
+
+Retested — confirmed live 2026-07-27. `Condition Is Genuine Existing Page` evaluated True, the update-existing-page branch executed correctly, and no duplicate page was created on recapture. See `2026-07-27-condition-is-genuine-existing-page-defect.md` for the full investigation trail (includes the insufficient first fix attempt and why it failed). Outstanding: manual cleanup of duplicate/stray pages created during this investigation's testing has not been done. A dedicated sweep for other `SetVariable` actions with missing values, across both Flow A and Flow B, has not been done.
