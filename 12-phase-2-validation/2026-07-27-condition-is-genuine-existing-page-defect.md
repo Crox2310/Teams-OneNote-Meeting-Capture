@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-27
 **Method:** Live test of AMEND-2026-07-27-001's fixes (re-capturing a meeting with an existing page), followed by a targeted Peek Code check of `Set_varOneNoteResolverResult_Exists_OneOff` after the live run showed `Condition Is Genuine Existing Page` evaluating False. Cross-checked against every other `varOneNoteResolverResult`-setting action already captured in `2026-07-27-flow-b-outstatus-trace.md`.
-**Status:** Root cause confirmed, real-world impact confirmed live, and a first fix attempt found to be insufficient — a deeper root cause was subsequently found and is documented in Section 7. Not yet fixed on the flow itself.
+**Status:** Root cause confirmed, real-world impact confirmed live, first fix attempt found insufficient, corrected fix applied and live-verified. **Resolved — see Section 8.**
 
 ---
 
@@ -124,10 +124,33 @@ The pattern is exact and systematic: every action representing "something was fo
 
 Not yet applied — pending this write-up. Section 4's original "not yet resolved" items are superseded by this addendum; the design decision has been made (array-based condition, matching real values) and the remaining work is purely the two missing `value` assignments above.
 
-### Updated suggested next steps
+### Updated suggested next steps (superseded — see Section 8)
 
-1. Apply the two `value` corrections above in the Designer.
-2. Publish and live-test via a fourth recapture of the same 27 Jul 2026 occurrence — this time expecting `Condition Is Genuine Existing Page` to evaluate True, `Update_page_content_Existing_Branch` to actually run, and **no new page** to be created.
-3. Confirm via OneNote directly that the page count for 27 Jul 2026 does not increase, and that the existing page shows the appended "Automated update" note.
-4. Clean up the three (now potentially four, minus one merged) duplicate pages and the stray "Untitled Page" created during this investigation.
-5. Log the complete fix (both missing-value corrections) as a single new amendment once verified — supersedes the not-yet-logged fix from Section 4.
+1. ~~Apply the two `value` corrections above in the Designer~~ — **done, see Section 8.**
+2. ~~Publish and live-test via a fourth recapture of the same 27 Jul 2026 occurrence~~ — **done, verified, see Section 8.**
+3. ~~Confirm via OneNote directly that the page count for 27 Jul 2026 does not increase~~ — **done, confirmed, see Section 8.**
+4. Clean up the accumulated duplicate pages and the stray "Untitled Page" created during this investigation — still outstanding.
+5. Log the complete fix as a single new amendment — **done, see Section 8.**
+
+## 8. Fix verified live — closed
+
+**Date:** 2026-07-27, same day, following application of the corrected fix from Section 7.
+
+Both corrections from Section 7 were applied in the Designer:
+
+1. `Set varOneNoteResolverResult ExistingMapping` → `"value": "ExistingMapping"` set and confirmed via Code view.
+2. `Set_varOneNoteResolverResult_Exists_OneOff` → `"value": "ExistingSection"` confirmed already present via Code view at time of checking (found already correct, no edit needed — cause unclear, possibly set in an earlier pass of this same session).
+
+Flow published successfully. The same 27 Jul 2026 "HoP - Focus Time" occurrence was recaptured a fourth time as the live test. Results:
+
+- `Condition Mapping Exists` → True (as expected, unchanged from prior runs)
+- `Set varOneNoteResolverResult ExistingMapping` → now populates `"ExistingMapping"` correctly
+- `Condition Is Genuine Existing Page` → **evaluated True** for the first time in this investigation, confirmed directly in the Activity run trace (green checkmarks through `Get Sections Existing Branch` → `Filter Existing Section By Name` → `Apply to each Existing Section` → `Update page content Existing Branch` → `Set varPageAction UpdatedAppend` → `Set varOutputPageLink Existing`)
+- No new page was created — confirmed directly in OneNote: "Mtg - HoP - Focus Time" section still shows a single "27 Jul 2026" page (page count did not increase from this run)
+
+**This defect is now resolved.** `Condition Is Genuine Existing Page` correctly distinguishes a genuinely pre-existing page from a freshly-created section, and the "append an automated update note, preserving human-entered content" feature now executes as originally designed — likely for the first time in the project's history on the recurring-mapping path, and for the first time via this specific trigger condition on the one-off/section-exists path.
+
+### Outstanding — not part of this fix
+
+- **OneNote cleanup**: the accumulated duplicate pages and one stray "Untitled Page" created during this investigation's earlier test runs (Sections 3a and 7) have not been cleaned up. Recommended as a short follow-up task, low risk, no flow changes required.
+- This fix should be logged as a new amendment (AMEND-2026-07-27-002 or next available ID) covering both `value` corrections, referencing this document.
