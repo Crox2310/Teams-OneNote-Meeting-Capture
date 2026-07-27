@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-27
 **Method:** Live test of AMEND-2026-07-27-001's fixes (re-capturing a meeting with an existing page), followed by a targeted Peek Code check of `Set_varOneNoteResolverResult_Exists_OneOff` after the live run showed `Condition Is Genuine Existing Page` evaluating False. Cross-checked against every other `varOneNoteResolverResult`-setting action already captured in `2026-07-27-flow-b-outstatus-trace.md`.
-**Status:** Root cause confirmed, and real-world impact now confirmed live (see Section 3a) — this defect is actively creating duplicate OneNote pages. Not yet fixed — write-up only, pending a design decision (see Section 4).
+**Status:** Root cause confirmed, real-world impact confirmed live, and a first fix attempt found to be insufficient — a deeper root cause was subsequently found and is documented in Section 7. Not yet fixed on the flow itself.
 
 ---
 
@@ -38,7 +38,7 @@ Cross-checking against every other action anywhere in Flow B that sets `varOneNo
 
 | Action | Path | Value set |
 |---|---|---|
-| `varOneNoteResolverResult_ExistingMapping` | Recurring, mapping row exists | `"ExistingMapping"` |
+| `varOneNoteResolverResult_ExistingMapping` | Recurring, mapping row exists | `"ExistingMapping"` *(later found to be incorrect — see Section 7)* |
 | `varOneNoteResolverResult_1` | Recurring, section exists | `"ExistingSection"` |
 | `varOneNoteResolverResult_2` | Recurring, section created | `"CreatedSection"` |
 | `Set_varOneNoteResolverResult_Exists_OneOff` | One-off, section exists | *(no value assigned — see above)* |
@@ -63,21 +63,71 @@ Checking the OneNote section directly afterward showed **two separate pages both
 
 This confirms the defect is real-world impacting today, not merely theoretical, and affects the recurring path as well as the one-off path (this test used a recurring meeting) — meaning the recurring-side equivalents of `varOneNoteResolverResult` (`"ExistingMapping"`, `"ExistingSection"`, `"CreatedSection"`) are equally unable to satisfy `Condition Is Genuine Existing Page`, consistent with Section 2's table.
 
-## 4. Not yet resolved
+## 4. Design decision made — first fix (superseded by Section 7)
 
-- The one-off "section created" branch's equivalent action was not traced this session — worth checking whether it has the same missing-value defect or a different (but still non-`"Exists"`) value.
-- **Design decision needed**: should the fix restore each of these five (or more) actions to set `"Exists"` literally wherever appropriate, or should `Condition Is Genuine Existing Page`'s expression be changed to match the values actually in use (e.g. `contains(createArray('ExistingMapping','ExistingSection','ExistsOneOff'), variables('varOneNoteResolverResult'))`)? The former is simpler; the latter avoids collapsing genuinely distinct states (mapping-existed vs section-existed vs section-was-created) into one word, which may itself be useful information for the `OutStatus` work now being planned.
-- Live confirmation needed: check actual OneNote content for a repeatedly-captured meeting to see whether duplicate pages have been created as a result of this defect.
+- The one-off "section created" branch's equivalent action was traced and found to reuse `"CreatedSection"`, consistent with the recurring path.
+- **Design decision**: the condition was changed to check for the real values in use, rather than restoring a literal `"Exists"` string everywhere: `contains(createArray('ExistingMapping','ExistingSection'), variables('varOneNoteResolverResult'))`. This was applied to `Condition Is Genuine Existing Page` and published successfully.
+- **This fix alone was insufficient** — see Section 7. It was correct as far as it went, but two of the four `varOneNoteResolverResult`-setting actions were subsequently found to never populate a value in the first place, so no expression change alone could fix the underlying problem.
 
 ## 5. Relationship to the `OutStatus` build
 
 This defect was found via the same trace exercise being done ahead of the `OutStatus` six-value build (`2026-07-27-flow-b-outstatus-trace.md`). It's relevant to that work directly: `varOneNoteResolverResult`'s distinct states (`ExistingMapping`/`ExistingSection`/`CreatedSection`/one-off equivalents) look like good candidate inputs for distinguishing `SUCCESS` from `PARTIAL_SUCCESS`, or for informing response messaging about whether a page was created vs updated — but only once they reliably and correctly reach `Condition Is Genuine Existing Page`, or that condition is redesigned around the values that actually exist.
 
-## 6. Suggested next steps
+## 6. Suggested next steps (superseded — see Section 7 for current steps)
 
 1. ~~Check actual OneNote content for evidence of duplicate pages from repeated captures of the same meeting~~ — **done, confirmed, see Section 3a.**
-2. Trace the untraced one-off "section created" branch to complete the picture.
-3. Make the design decision in Section 4 (restore `"Exists"` literally, vs redesign the condition around real values).
-4. Fix and live-test, following the controlled amendment process. Given confirmed real-world impact (silent duplicate page creation on every recapture of an existing meeting, recurring or one-off), this should be treated as a priority fix rather than deferred alongside the `OutStatus` build.
+2. ~~Trace the untraced one-off "section created" branch to complete the picture~~ — **done, see Section 4.**
+3. ~~Make the design decision in Section 4~~ — **done, see Section 4.**
+4. ~~Fix and live-test~~ — **fix applied and live-tested; found insufficient, see Section 7.**
 5. Consider a one-off cleanup pass to identify and remove any other duplicate pages already created by this defect across the project's history, since it appears to have been present since this branch was originally built.
 6. Log as a new amendment once fixed — this document is a trace/investigation record only.
+
+## 7. Correction — first fix applied was insufficient (deeper root cause found)
+
+**Date of this addendum:** 2026-07-27, same day, following live retest of the Section 4 fix.
+
+The condition-expression fix proposed in Section 4 and applied to the Designer (`contains(createArray('ExistingMapping', 'ExistingSection'), variables('varOneNoteResolverResult'))`) was live-tested by recapturing the same 27 Jul 2026 "HoP - Focus Time" occurrence a third time. The condition **still evaluated False**, and Flow B created a **third** duplicate page plus an unrelated "Untitled Page" in the same run.
+
+Tracing the run showed `Condition Mapping Exists` went True (a real mapping row and existing page were found — confirmed via `Compose_ExistingPageId` extracting a genuine page ID), but `Set varOneNoteResolverResult ExistingMapping`, the action responsible for setting `varOneNoteResolverResult` on that branch, was then Peek-Coded directly and found to have **no `value` key at all** — identical to the `Exists_OneOff` defect already documented in Section 2:
+
+```json
+{
+  "type": "SetVariable",
+  "inputs": {
+    "name": "varOneNoteResolverResult"
+  },
+  "runAfter": {
+    "Set_varTargetSectionPagesUrl_ExistingMapping": ["Succeeded"]
+  }
+}
+```
+
+This means the array-based fix in Section 4, while logically correct, was checking against a variable that its own upstream writers were silently failing to populate on two of the four real paths. The earlier assumption that `Set varOneNoteResolverResult ExistingMapping`'s value was `"ExistingMapping"` (stated in Section 2's table) was taken from the canvas label, not verified via Peek Code at the time — this addendum corrects that.
+
+### Complete, now-verified picture
+
+| Action | Path | Value set |
+|---|---|---|
+| `Set varOneNoteResolverResult ExistingMapping` | Recurring, mapping row exists | ❌ **missing — no `value` key** |
+| `varOneNoteResolverResult_1` | Recurring, section exists | `"ExistingSection"` |
+| `varOneNoteResolverResult_2` | Recurring, section created | `"CreatedSection"` |
+| `Set_varOneNoteResolverResult_Exists_OneOff` | One-off, section exists | ❌ **missing — no `value` key** |
+| `Set_varOneNoteResolverResult_Created_OneOff` | One-off, section created | `"CreatedSection"` |
+
+The pattern is exact and systematic: every action representing "something was found to already exist" is missing its value; every "something was just created" action has one set correctly and consistently (`"CreatedSection"` reused across both paths). This points to the "found existing" half of each pair never having been finished when this branch was originally built, rather than a logic error in the condition itself.
+
+### Corrected fix
+
+1. `Set varOneNoteResolverResult ExistingMapping` → add `"value": "ExistingMapping"`
+2. `Set_varOneNoteResolverResult_Exists_OneOff` → add `"value": "ExistingSection"` (reusing the existing one-off/recurring shared convention, matching its sibling `varOneNoteResolverResult_1`)
+3. `Condition Is Genuine Existing Page`'s expression from Section 4 — **no further change needed**, stays as `contains(createArray('ExistingMapping', 'ExistingSection'), variables('varOneNoteResolverResult'))`
+
+Not yet applied — pending this write-up. Section 4's original "not yet resolved" items are superseded by this addendum; the design decision has been made (array-based condition, matching real values) and the remaining work is purely the two missing `value` assignments above.
+
+### Updated suggested next steps
+
+1. Apply the two `value` corrections above in the Designer.
+2. Publish and live-test via a fourth recapture of the same 27 Jul 2026 occurrence — this time expecting `Condition Is Genuine Existing Page` to evaluate True, `Update_page_content_Existing_Branch` to actually run, and **no new page** to be created.
+3. Confirm via OneNote directly that the page count for 27 Jul 2026 does not increase, and that the existing page shows the appended "Automated update" note.
+4. Clean up the three (now potentially four, minus one merged) duplicate pages and the stray "Untitled Page" created during this investigation.
+5. Log the complete fix (both missing-value corrections) as a single new amendment once verified — supersedes the not-yet-logged fix from Section 4.
