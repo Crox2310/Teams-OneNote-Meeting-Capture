@@ -139,10 +139,33 @@ Captured in full for completeness / future reference:
 
 **Note on `parentSectionGroup`:** the `@odata.context` for `parentSectionGroup` is present but the `parentSectionGroup` value itself is absent from the payload — indicating the section sits directly under the notebook (`Meeting Notes`) rather than nested inside a section group. This rules out any section-group-nesting complication as a contributing factor to the `pageId` resolution defect.
 
+## Second addendum — root cause pinpointed: variable name mismatch in `Compose ExistingPageId`
+
+Opened `Compose ExistingPageId` directly (the action whose output feeds `pageId` into the failing call). Its full Code view definition:
+
+```json
+{
+  "type": "Compose",
+  "inputs": "@last(split(variables('varOutputPageSelfUrl'), '/'))",
+  "runAfter": {
+    "Compose_UpdateHtmlFragment": [
+      "Succeeded"
+    ]
+  }
+}
+```
+
+**This is the specific defect.** The expression reads `variables('varOutputPageSelfUrl')` — but the canvas trace immediately upstream shows the preceding Set action is named **`Set varOutputPageSelfUrlExisting`** (with the `Existing` suffix). These are two different variable names. `Compose ExistingPageId` is not reading the variable that the immediately-preceding step wrote to.
+
+**Corroborating evidence from the same run:** `Compose ExistingPageId`'s own Run results (Inputs and Outputs panels, both `Show raw inputs` / `Show raw outputs`) are **both empty** — the action "succeeded" (0s, green check on canvas) but produced no meaningful value, consistent with `variables('varOutputPageSelfUrl')` evaluating to null/empty, `split(null, '/')` returning an empty result, and `last()` of that returning empty. This is exactly the empty `pageId` observed downstream in `Update_page_content_Existing_Branch`.
+
+**This refines the working root-cause description.** Previous docs (29 July) described the defect at the level of "`varFinalExistingPageSelfUrl` never gets populated on the one-off path." Today's direct Code view inspection narrows it further: the specific expression at fault is `Compose ExistingPageId`'s reference to `varOutputPageSelfUrl` where the adjacent, correctly-populated variable is (or should be) `varOutputPageSelfUrlExisting`. Whether the underlying issue is a plain naming typo in the Compose expression, or whether `varOutputPageSelfUrl` and `varOutputPageSelfUrlExisting` are two genuinely distinct variables in the flow's variable list (in which case the real question becomes "why doesn't anything populate `varOutputPageSelfUrl` on this path"), is not yet confirmed — that requires a full listing of the flow's declared variables and every `Set` action that touches either name, across both branches.
+
+**Not yet done / explicitly not concluded:** no edit has been made. The exact fix (repoint the expression at `varOutputPageSelfUrlExisting`, vs. some other correction) should not be applied until the full variable list and all `Set` actions referencing `varOutputPageSelfUrl*` are enumerated, per the standing pattern of confirming via Peek Code / live evidence before proposing fixes.
+
 ## Status
 
-- **Root cause:** Confirmed (29 July), corroborated again live (30 July) — same failure mode, same missing variable.
+- **Root cause:** Pinpointed to a specific expression (30 July) — `Compose ExistingPageId` reads `variables('varOutputPageSelfUrl')`, not `varOutputPageSelfUrlExisting`, which the adjacent Set action populates. Empty Inputs/Outputs on `Compose ExistingPageId` in the same run corroborate this directly.
 - **sectionId validity:** Confirmed genuine (30 July addendum) — not part of the defect. Full raw Section payload captured above for reference.
-- **Fix:** Not yet implemented.
-- **Next step:** Trace `Set varOutputPageSelfUrlExisting` and confirm what populates (or fails to populate) `varFinalExistingPageSelfUrl` on the one-off path, per the recommended next steps in `handover-2026-07-29-addendum-confirmed-root-cause.md`. While there, also sanity-check whether section-creation timing/propagation could be a contributing factor per the note above.
+- **Fix:** Not yet implemented. Next action is to enumerate all `Set` actions and declared variables referencing `varOutputPageSelfUrl` / `varOutputPageSelfUrlExisting` (via "Go to operation" flat index, per established pattern) before editing the Compose expression, to confirm this is a straightforward naming fix and not a symptom of a wider variable-scoping issue.
 - **Process note:** `amendment-log.md` backfill is still outstanding per the 20 July gap-analysis doc; this session's findings should be added to that backfill when it happens.
