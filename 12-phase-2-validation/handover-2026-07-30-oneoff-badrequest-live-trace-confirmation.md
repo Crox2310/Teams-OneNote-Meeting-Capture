@@ -85,7 +85,7 @@ Full static action definition (`Update_page_content_Existing_Branch`), captured 
 Drilling into the parent `Apply to each Existing Section` loop's raw run inputs (`foreachItems`) shows the actual Section resource being iterated, item `[0]`:
 
 - `id`: `1-bd74643c-fc4d-410f-97ab-652c78bdce3a` — **matches exactly** the `sectionId` passed into the failing `UpdatePageContent` call
-- `name`: `"Mtg – Antonio AL"`
+- `name`: `"Mtg - Antonio AL"`
 - `createdTime`: `2026-07-30T21:20:24Z`
 - `createdBy` / `lastModifiedBy`: `David Croxson`
 - `lastModifiedTime`: `2026-07-30T21:20:26Z`
@@ -99,10 +99,50 @@ Drilling into the parent `Apply to each Existing Section` loop's raw run inputs 
 
 **Worth flagging for the eventual fix investigation:** this section's `createdTime` (`21:20:24Z`) is only ~28 seconds before the flow run's start time (`10:20:52 PM` local / `21:20:52Z`, per the run's Start time property). The section was very recently created — plausibly by a prior step in this same capture cycle, or a near-simultaneous run. Not established as causal, but close enough in time that it's worth ruling in/out when tracing `varFinalExistingPageSelfUrl` — e.g. whether a race between section-creation propagation and the one-off page-resolution logic could be a contributing factor, separate from the already-confirmed "variable never populated" root cause.
 
+### Full raw JSON — `foreachItems` (Apply_to_each_Existing_Section)
+
+Captured in full for completeness / future reference:
+
+```json
+{
+    "foreachItems": [
+        {
+            "id": "1-bd74643c-fc4d-410f-97ab-652c78bdce3a",
+            "self": "https://www.onenote.com/api/v1.0/myOrganization/siteCollections/b5f8860c-4772-4e8b-b340-e80ba9d490fa/sites/d814850f-59bb-4182-92b7-e25d8c6a0487/notes/sections/1-bd74643c-fc4d-410f-97ab-652c78bdce3a",
+            "createdTime": "2026-07-30T21:20:24Z",
+            "name": "Mtg - Antonio AL",
+            "createdBy": "David Croxson",
+            "lastModifiedBy": "David Croxson",
+            "lastModifiedTime": "2026-07-30T21:20:26Z",
+            "isDefault": false,
+            "links": {
+                "oneNoteClientUrl": {
+                    "href": "onenote:https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting%20Notes/Mtg%20-%20Antonio%20AL.one"
+                },
+                "oneNoteWebUrl": {
+                    "href": "https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting%20Notes?wd=target%28Mtg%20-%20Antonio%20AL.one%2F%29"
+                }
+            },
+            "pagesUrl": "https://www.onenote.com/api/v1.0/myOrganization/siteCollections/b5f8860c-4772-4e8b-b340-e80ba9d490fa/sites/d814850f-59bb-4182-92b7-e25d8c6a0487/notes/sections/1-bd74643c-fc4d-410f-97ab-652c78bdce3a/pages",
+            "size": 6236,
+            "parentNotebook@odata.context": "https://www.onenote.com/api/v1.0/$metadata#myOrganization/siteCollections('b5f8860c-4772-4e8b-b340-e80ba9d490fa')/sites('d814850f-59bb-4182-92b7-e25d8c6a0487')/notes/sections('1-bd74643c-fc4d-410f-97ab-652c78bdce3a')/parentNotebook(id,name,self)/$entity",
+            "parentNotebook": {
+                "id": "1-179a4384-615a-45a7-b96d-b3a3ba5d7b75",
+                "name": "Meeting Notes",
+                "self": "https://www.onenote.com/api/v1.0/myOrganization/siteCollections/b5f8860c-4772-4e8b-b340-e80ba9d490fa/sites/d814850f-59bb-4182-92b7-e25d8c6a0487/notes/notebooks/1-179a4384-615a-45a7-b96d-b3a3ba5d7b75"
+            },
+            "parentSectionGroup@odata.context": "https://www.onenote.com/api/v1.0/$metadata#myOrganization/siteCollections('b5f8860c-4772-4e8b-b340-e80ba9d490fa')/sites('d814850f-59bb-4182-92b7-e25d8c6a0487')/notes/sections('1-bd74643c-fc4d-410f-97ab-652c78bdce3a')/parentSectionGroup(id,name,self)/$entity"
+        }
+    ]
+}
+```
+
+**Note on `parentSectionGroup`:** the `@odata.context` for `parentSectionGroup` is present but the `parentSectionGroup` value itself is absent from the payload — indicating the section sits directly under the notebook (`Meeting Notes`) rather than nested inside a section group. This rules out any section-group-nesting complication as a contributing factor to the `pageId` resolution defect.
+
 ## Status
 
 - **Root cause:** Confirmed (29 July), corroborated again live (30 July) — same failure mode, same missing variable.
-- **sectionId validity:** Confirmed genuine (30 July addendum) — not part of the defect.
+- **sectionId validity:** Confirmed genuine (30 July addendum) — not part of the defect. Full raw Section payload captured above for reference.
 - **Fix:** Not yet implemented.
 - **Next step:** Trace `Set varOutputPageSelfUrlExisting` and confirm what populates (or fails to populate) `varFinalExistingPageSelfUrl` on the one-off path, per the recommended next steps in `handover-2026-07-29-addendum-confirmed-root-cause.md`. While there, also sanity-check whether section-creation timing/propagation could be a contributing factor per the note above.
 - **Process note:** `amendment-log.md` backfill is still outstanding per the 20 July gap-analysis doc; this session's findings should be added to that backfill when it happens.
