@@ -157,7 +157,7 @@ Opened `Compose ExistingPageId` directly. Its Code view definition:
 
 At this point it looked like the expression referenced `varOutputPageSelfUrl` while the adjacent Set action was titled `Set varOutputPageSelfUrlExisting`, raising the hypothesis of a naming mismatch. **This hypothesis was ruled out** once the flow's declared variable list was pulled via "Go to operation" (see below) — there is no separate variable called `varOutputPageSelfUrlExisting`; that was only the action's display title. The single declared variable is `varOutputPageSelfUrl`, and the Compose expression correctly references it. The real defect is documented in the third addendum below.
 
-## Third addendum — ROOT CAUSE CONFIRMED: missing `value` key on `Set varOutputPageSelfUrl Existing` (Pattern 6 recurrence)
+## Third addendum (refined further below) — missing `value` key on `Set varOutputPageSelfUrl Existing` (Pattern 6 recurrence)
 
 Full variable-list sweep via "Go to operation" confirmed the flow's actual declared variables: `varTargetSectionPagesUrl`, `varOneNoteResolverResult`, `varPageAction`, `varOutputPageSelfUrl`, `varOutputPageLink`, `varOutStatus`, `varFinalExistingPageSelfUrl`, `varFinalPageDecision`, `varFinalMatchCount`. No `varOutputPageSelfUrlExisting` variable exists — confirming the second addendum's naming-mismatch theory was a dead end.
 
@@ -199,11 +199,60 @@ Outputs: "No outputs" (SetVariable actions don't produce outputs; the effect is 
 
 **This is a recurrence of Pattern 6** from the living audit — "SetVariable actions missing `value` keys entirely" — previously identified and fixed twice on 27 July (AMEND-2026-07-27-001, AMEND-2026-07-27-002) elsewhere in this same flow. This specific action (`Set varOutputPageSelfUrl Existing`) was not part of that sweep and has now been found to carry the same defect.
 
-**Not yet done:** no edit applied. The correct `value` expression for this action has not yet been determined — it should almost certainly reference the `self` URL of the matched existing section/page found earlier in the existing-page branch (candidates to check: output of `Get Sections Existing Branch` / `Filter Existing Section By Name`, or the declared-but-seemingly-unused `varFinalExistingPageSelfUrl` variable, which may be the intended source that was meant to be read here rather than reconstructed via this Compose/split pattern). This needs to be confirmed against the branch's upstream data shape before writing the fix.
+At this point the working theory was that a straightforward `value` expression could be dropped into this action to fix it. **The fourth addendum below found this is not that simple.**
+
+## Fourth addendum — REVISED FINDING: this is a missing capability, not a one-line fix. `varFinalExistingPageSelfUrl` is architecturally never populated for one-off meetings.
+
+Traced backward from `Compose ExistingPageId` to find where a correct value for `varOutputPageSelfUrl` should originate.
+
+**`Compose ExistingPageSelfUrl`** (Code view):
+```json
+"inputs": "@if(\n  greater(length(body('Filter_Existing_Mapping')), 0),\n  first(body('Filter_Existing_Mapping'))?['PageSelfUrl'],\n  ''\n)"
+```
+Pulls the `PageSelfUrl` column from the matched SharePoint mapping row, falling back to `''` if no match.
+
+**`varFinalExistingPageSelfUrl`** — the declared variable's `InitializeVariable` action, positioned right after `Get items` near the top of the flow, before any recurring/one-off branching:
+```json
+"value": "@first(body('Filter_Existing_Mapping'))?['PageSelfUrl']"
+```
+
+**`varFinalExistingPageSelfUrl 1`** — a second, later `SetVariable` action:
+```json
+"value": "@outputs('Compose_ExistingPageSelfUrl')"
+```
+
+Both of these depend on `Filter_Existing_Mapping`, which (per the second addendum's earlier trace of `Set varTargetSectionPagesUrl ExistingMapping`) filters SharePoint rows by `SeriesMasterId` — a field that only exists for **recurring** meetings.
+
+**Confirmed at runtime, on the actual failing run (7/30 10:20 PM):** `varFinalExistingPageSelfUrl`'s Run results (Inputs/Outputs of its `InitializeVariable` action) show:
+```json
+{
+  "variables": [
+    {
+      "name": "varFinalExistingPageSelfUrl",
+      "type": "String",
+      "value": null
+    }
+  ]
+}
+```
+It initializes to `null` and — on this one-off-meeting run — is never subsequently set to anything else.
+
+**Confirmed via a full "Go to operation" search for "OneOff":** the complete list of one-off-specific actions is:
+`Create Page OneOff`, `Get Sections OneOff`, `Create Section OneOff`, `Set varOutputPageLink Created OneOff`, `Filter OneNote Section OneOff`, `Condition Section Exists OneOff`, `Set varTargetSectionPagesUrl OneOff Exists`, `Set varOneNoteResolverResult Exists OneOff`, `Set varTargetSectionPagesUrl OneOff Created`, `Set varOneNoteResolverResult Created OneOff`, `Compose Section Match Count OneOff`, `FB-F01 — Compose Input MeetingTitle (one-off)`.
+
+**None of these touch the SharePoint mapping table or resolve a specific existing page.** They are all about resolving or creating a **section** for a one-off meeting. There is no "Filter Existing Mapping OneOff" or equivalent page-level lookup for one-off meetings anywhere in the flow.
+
+**Revised understanding of the defect:** This is not a single blank expression that can be filled in with an existing upstream value. The recurring-meeting path has a genuine data source for "the existing page for this meeting" — the SharePoint mapping table, keyed by `SeriesMasterId`, populated the first time that meeting series was captured. One-off meetings have no equivalent persistent key (`SeriesMasterId` doesn't exist for them), so there is **no mechanism anywhere in this flow that resolves a specific existing page for a one-off meeting on recapture.** The one-off path can find/recreate the right *section* (via the OneOff actions above), but nothing resolves the specific *page* within it. `Set varOutputPageSelfUrl Existing`'s blank `value` field is a symptom of this gap, not an isolated typo — there is currently nothing correct to put there for a one-off meeting.
+
+**Open design question for the fix (not yet resolved):** how *should* the flow find "the existing page for this one-off meeting" on recapture, given there's no SeriesMasterId-based mapping to rely on? Candidate approaches to evaluate:
+- Match by meeting title within the resolved section (the existing `Get Sections Existing Branch` → `Filter Existing Section By Name` → `Apply to each Existing Section` loop already narrows to a section — an equivalent "get pages in this section, filter/match by title or by SeriesMasterId absence" step could resolve the specific page, mirroring the recurring path's shape but without the mapping table).
+- Some one-off-specific mapping mechanism (e.g. keyed on meeting subject + date, or Teams meeting ID) that doesn't currently exist and would need to be built new.
+
+This needs a build/design decision, not just a Peek Code fix — recommend treating this as its own scoped piece of work rather than folding it into the pattern-6 amendment log entry.
 
 ## Status
 
-- **Root cause:** **CONFIRMED** (30 July) — `Set varOutputPageSelfUrl Existing` is missing its `value` key entirely (Pattern 6), setting `varOutputPageSelfUrl` to `""`. This cascades through `Compose ExistingPageId` to produce an empty `pageId`, causing the `UpdatePageContent` `BadRequest`. Confirmed via Code view (static) and raw run Inputs (runtime) on the same failing run.
-- **Ruled out:** sectionId validity (confirmed genuine — see addendum above); variable-name mismatch between `varOutputPageSelfUrl` and `varOutputPageSelfUrlExisting` (no such second variable exists — the "Existing" suffix is only an action title).
-- **Fix:** Not yet implemented. Needs: determine the correct `value` expression for `Set varOutputPageSelfUrl Existing` (likely the matched section/page's `self` URL from upstream in the existing-page branch, or possibly `varFinalExistingPageSelfUrl` if that variable was intended to be the source and is itself unpopulated elsewhere — worth checking whether anything sets `varFinalExistingPageSelfUrl` at all, since no `Set varFinalExistingPageSelfUrl` action was seen in the full operation sweep).
-- **Process note:** this should be logged as a new AMEND entry once fixed (following the AMEND-2026-07-27-001/002 numbering pattern), and `amendment-log.md` backfill (still outstanding per the 20 July gap-analysis doc) should include this alongside the earlier pattern-6 fixes.
+- **Root cause:** **CONFIRMED, and revised in scope** (30 July). Immediate technical cause: `Set varOutputPageSelfUrl Existing` is missing its `value` key (Pattern 6), so `varOutputPageSelfUrl` = `""` → `Compose ExistingPageId` = `""` → empty `pageId` → `UpdatePageContent` `BadRequest` (misleadingly reported against `sectionId`). **Underlying cause:** there is no mechanism in this flow that resolves a specific existing OneNote page for a **one-off** meeting on recapture — the SharePoint-mapping-based resolution (`Filter_Existing_Mapping` → `varFinalExistingPageSelfUrl`) only works for recurring meetings (keyed on `SeriesMasterId`). Confirmed at runtime: `varFinalExistingPageSelfUrl` is `null` throughout the failing run, and no "OneOff" action anywhere in the flow performs an equivalent page-level lookup.
+- **Ruled out:** sectionId validity (confirmed genuine); variable-name mismatch between `varOutputPageSelfUrl` and `varOutputPageSelfUrlExisting` (no such second variable exists).
+- **Fix:** Not yet implemented, and now understood to require a design decision (see open design question above) rather than a single-expression patch. This should be scoped as its own piece of build work.
+- **Process note:** the confirmed-but-narrower Pattern 6 defect (missing `value` key) is still worth its own AMEND log entry for traceability, but the fix itself should wait on resolving the underlying one-off-page-resolution gap — patching the blank field with a placeholder or the wrong source would likely just move the failure elsewhere. `amendment-log.md` backfill (still outstanding per the 20 July gap-analysis doc) should note both: the Pattern 6 finding, and this new open design item for one-off existing-page resolution.
