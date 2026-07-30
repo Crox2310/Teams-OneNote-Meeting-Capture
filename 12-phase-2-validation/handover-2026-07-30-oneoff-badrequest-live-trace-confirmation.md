@@ -1,5 +1,19 @@
 # Handover — 30 July 2026: Live-Trace Confirmation of One-Off Existing-Page BadRequest
 
+## ⏭ START HERE NEXT SESSION
+
+**Status: root cause confirmed, fix NOT started. This is a missing capability, not a quick patch.**
+
+**The gap:** One-off (non-recurring) meetings have no mechanism anywhere in this flow to resolve "which existing OneNote page is this meeting's page" on recapture. Recurring meetings solve this via a SharePoint mapping table keyed on `SeriesMasterId` (which one-off meetings don't have). As a direct result, `varFinalExistingPageSelfUrl` stays `null` for one-off runs, `Set varOutputPageSelfUrl Existing` has nothing valid to assign, and the chain ends in a `BadRequest` on `Update_page_content_Existing_Branch` (Graph misleadingly blames `sectionId`; the real problem is an empty `pageId`).
+
+**Next step is a design decision, not a code trace.** Two candidate directions are written up in the "Fourth addendum" section below — pick one (or propose a third) before touching any flow actions:
+1. Extend the existing section-resolution loop (`Get Sections Existing Branch` → `Filter Existing Section By Name`) to also fetch pages within that section and match by title — no new mapping mechanism needed.
+2. Build a new one-off-specific mapping mechanism (e.g. keyed on meeting subject + date, or Teams meeting ID) parallel to the recurring path's SharePoint table.
+
+**Do not** fill in `Set varOutputPageSelfUrl Existing`'s blank value field with a guess or a placeholder before that decision is made — see "Fourth addendum" for why the obvious-looking fixes (naming mismatch, missing `value` key) turned out to be dead ends or symptoms rather than the real gap.
+
+---
+
 ## Purpose
 
 This session captured a fresh live run of **PA - Resolve OneNote Meeting Section - v2 Clean Build** that failed with the same one-off existing-page `BadRequest` documented in:
