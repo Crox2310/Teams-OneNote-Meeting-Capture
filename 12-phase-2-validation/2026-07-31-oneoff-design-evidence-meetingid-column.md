@@ -4,7 +4,7 @@
 
 This doc collects the targeted evidence gathered on 31 July to answer the open design question from `handover-2026-07-30-oneoff-badrequest-live-trace-confirmation.md`: **how should the flow resolve "the existing page" for a one-off (non-recurring) meeting on recapture, given there's no `SeriesMasterId` to key on?**
 
-This is evidence-gathering only — no fix implemented, no design finalised yet. Material was gathered from full Flow A and Flow B screenshot exports (Connectors, Go to Operation, High E2E View) plus a direct look at the live SharePoint mapping list.
+Evidence gathering is now complete. This doc ends with a concrete, buildable design — see "Build plan" at the bottom. **No fix has been implemented in this session** — this is design only, ready for a future build session.
 
 ## Confirmed: Flow B's mapping lookup is keyed only on `SeriesMasterId`
 
@@ -20,7 +20,7 @@ This is evidence-gathering only — no fix implemented, no design finalised yet.
   }
 }
 ```
-Confirms: the only match key is `SeriesMasterId`. One-off meetings have no `SeriesMasterId`, so this filter can never match a one-off meeting's row (if one existed) — consistent with everything found on 30 July.
+Confirms: the only match key is `SeriesMasterId`. One-off meetings have no `SeriesMasterId`, so this filter can never match a one-off meeting's row — consistent with everything found on 30 July.
 
 ## Confirmed: `CalendarEventId` is a stable, always-available identifier, computed in Flow A
 
@@ -28,116 +28,107 @@ Traced `OutCalendarEventId` through Flow A's candidate-resolution branches:
 
 - **Single/selected match:** `FA21 Compose OutCalendarEventId`: `@coalesce(outputs('FA19_Compose_SelectedEvent')?['id'], '')`
 - **Multi-candidate, one selected:** `FA30 Compose OutCalendarEventId`: `@coalesce(outputs('FA28_Compose_SingleEvent')?['id'], '')`
-- **No match:** `FA27F Compose OutCalendarEventId NoMatch`: `@string('')` — explicitly blank when there's no meeting
-- **Multi-candidate, not yet selected:** `FA42 Compose OutCalendarEventId Multi`: `@string('')` — also blank until a specific meeting is chosen
+- **No match:** `FA27F Compose OutCalendarEventId NoMatch`: `@string('')`
+- **Multi-candidate, not yet selected:** `FA42 Compose OutCalendarEventId Multi`: `@string('')`
 
-The underlying source is **`FA08 Get calendar view of events`** (Office 365 Outlook `GetEventsCalendarViewV3`), and in every branch where a specific meeting is actually resolved, `OutCalendarEventId` is that meeting's own Outlook event `id`.
+Source: **`FA08 Get calendar view of events`** (Office 365 Outlook `GetEventsCalendarViewV3`). In every branch where a specific meeting is resolved, `OutCalendarEventId` is that meeting's own Outlook event `id`.
 
-**This value exists and is non-blank for every meeting type — recurring or one-off** — once a specific meeting has been selected. It is already returned by Flow A to the Topic (`calendareventid: Topic.CalendarEventId`, confirmed in the 31 July Topic YAML review) and already passed by the Topic into Flow B (`text_4: =Topic.CalendarEventId`, same review). No new plumbing is required to get this value to Flow B — it's already arriving at the trigger.
+**Non-blank for every meeting type — recurring or one-off — once selected.** Already returned by Flow A to the Topic (`calendareventid: Topic.CalendarEventId`) and already passed by the Topic into Flow B (`text_4: =Topic.CalendarEventId`). No new plumbing needed to get this value to Flow B — it already arrives at the trigger.
 
-## New finding: the SharePoint mapping list already has an unused `MeetingId` column
+## Confirmed: the SharePoint mapping list already has an unused `MeetingId` column
 
-Viewed the live `RecurringMeetingSectionMap` list directly (SharePoint site `jsainsbury.sharepoint.com/sites/coplt`, list `MeetingNoteIndex`). Full column set, assembled by scrolling across the one existing row ("Mapping"):
+Live `RecurringMeetingSectionMap` list (`jsainsbury.sharepoint.com/sites/coplt`, list `MeetingNoteIndex`). Full column set, from the one existing row ("Mapping"):
 
 | Column | Populated on existing row? |
 |---|---|
-| Title | Yes ("Mapping") |
+| Title | Yes |
 | SeriesMasterId | Yes |
 | MeetingTitle | Yes |
-| SectionDisplayName | (not visible in captured view) |
 | SectionPagesUrl | Yes |
-| NotebookName | (not visible in captured view) |
-| CreatedAtUtc | (not visible in captured view) |
-| LastUsedAtUtc | **Empty** |
-| Status | **Empty** (though a "Status" column with an "Active" badge rendering was visible — worth re-checking, see note below) |
-| SectionSelfUrl | **Empty** |
-| PageSelfUrl | Yes (this is the field `Compose_ExistingPageSelfUrl` reads) |
-| LastUpdatedUtc | **Empty** |
-| SectionId | **Empty** |
+| PageSelfUrl | Yes |
+| LastUsedAtUtc | Empty |
+| Status | Empty (rendering discrepancy noted, unresolved, low priority) |
+| SectionSelfUrl | Empty |
+| LastUpdatedUtc | Empty |
+| SectionId | Empty |
 | **MeetingId** | **Empty** |
 
-**Nothing in Flow B currently reads or writes `MeetingId`, `SectionId`, `SectionSelfUrl`, or `LastUpdatedUtc`.** These columns exist in the schema but are structurally unused by the flow as it currently stands.
+Nothing in Flow B currently reads or writes `MeetingId`, `SectionId`, `SectionSelfUrl`, or `LastUpdatedUtc`.
 
-**Note on `Status`:** one screenshot showed a "Status" column rendering an "Active" badge for the existing row, which appears to contradict "empty" — this needs re-confirming directly (possibly a SharePoint choice-column default rendering, or the column order shifted between screenshots during horizontal scroll). Flagging as unconfirmed rather than asserting either way.
+**`MeetingId`'s intended purpose — confirmed by David:** scoped for a planned future feature (finding post-meeting transcriptions/recordings/actions and posting them to the right OneNote page). Compatible with reusing it for one-off page resolution — both need a stable per-meeting identifier. **One flagged risk, not yet resolved:** Teams transcript/recording APIs sometimes key off a Teams online-meeting ID (from `joinWebUrl`) rather than the plain Outlook calendar event ID used here — worth a deliberate check once the transcription feature is actually scoped, in case `MeetingId` ends up needing to hold a different value for that purpose. Not a blocker for today's fix.
 
-## Confirmed: `Send an HTTP request to SharePoint` — the only mapping-list write in the flow
+## Confirmed: the full recurring-path mapping-write lifecycle
 
+**Write 1 — `Send an HTTP request to SharePoint`** (fires once, during section resolution, inside `Condition Should Write Mapping` → `True`, under `Condition Section Exists Recurring`):
 ```json
 {
-  "type": "OpenApiConnection",
+  "parameters/method": "POST",
+  "parameters/uri": "_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items",
+  "parameters/body": "{ \"Title\": \"Mapping\", \"SeriesMasterId\": \"@{outputs('Compose_Input_SeriesMasterId')}\", \"MeetingTitle\": \"@{outputs('Compose_Input_MeetingTitle')}\", \"SectionPagesUrl\": \"@{variables('varTargetSectionPagesUrl')}\", \"Status\": \"Active\" }"
+}
+```
+Creates the row. No `MeetingId`, no `PageSelfUrl` yet (page doesn't exist at this point).
+
+**Write 2 — `HTTP Update SP PageSelfUrl`** (fires after the page is created, `runAfter: Compose_PageSelfUrl_Created`):
+```json
+{
+  "parameters/method": "POST",
+  "parameters/uri": "_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items(@{if(greater(length(body('Filter_Existing_Mapping')),0), first(body('Filter_Existing_Mapping'))?['ID'], body('Send_an_HTTP_request_to_SharePoint')?['ID'])})",
+  "parameters/headers": { "IF-MATCH": "*", "X-HTTP-Method": "MERGE" },
+  "parameters/body": "{ \"PageSelfUrl\": \"@{outputs('Compose_PageSelfUrl_Created')}\" }"
+}
+```
+Updates that same row's `PageSelfUrl`. The target item ID is chosen with an inline `if()`: use `Filter_Existing_Mapping`'s match if one existed, otherwise use the ID just returned by Write 1's POST. **One action correctly handles both "this meeting already had a row" and "we just created its row" cases.**
+
+## Confirmed: the one-off path has zero SharePoint interaction, anywhere
+
+**`Set varOneNoteResolverResult Created OneOff`**: `{"value": "CreatedSection"}` — status flag only.
+**`Set varTargetSectionPagesUrl OneOff Created`**: `{"value": "@outputs('Create_Section_OneOff')?['body']?['pagesUrl']"}` — purely in-memory.
+**`Create Page OneOff`**: plain OneNote `CreatePageInSection` call — no SharePoint write.
+
+The one-off path creates sections and pages in complete isolation from the mapping list. It has no memory of anything it does.
+
+## Build plan — ready for implementation
+
+Four new/modified actions, each directly templated on a recurring-path equivalent:
+
+**1. Modify `Send an HTTP request to SharePoint`** (recurring write) — add `MeetingId` to the body:
+```json
+"MeetingId": "@{triggerBody()?['text_4']}"
+```
+(assuming `text_4` is still the `CalendarEventId` trigger parameter — confirm against Flow B's `When an agent calls the flow` schema before building, since parameter numbering could differ from Flow A's/Topic's naming).
+
+**2. New action: `Filter Existing Mapping OneOff`** — same shape as `Filter Existing Mapping`, on the one-off path:
+```json
+{
+  "type": "Query",
   "inputs": {
-    "parameters": {
-      "dataset": "https://jsainsbury.sharepoint.com/sites/coplt",
-      "parameters/method": "POST",
-      "parameters/uri": "_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items",
-      "parameters/body": "{\n  \"Title\": \"Mapping\",\n  \"SeriesMasterId\": \"@{outputs('Compose_Input_SeriesMasterId')}\",\n  \"MeetingTitle\": \"@{outputs('Compose_Input_MeetingTitle')}\",\n  \"SectionPagesUrl\": \"@{variables('varTargetSectionPagesUrl')}\",\n  \"Status\": \"Active\"\n}"
-    },
-    "host": { "connection": "shared_sharepointonline", "operationId": "HttpRequest" }
+    "from": "@body('Get_items')?['value']",
+    "where": "@equals(item()?['MeetingId'],triggerBody()?['text_4'])"
   }
 }
 ```
+Placement: needs to run early enough that its result can feed both page-decision logic and, later, `varOutputPageSelfUrl Existing` — likely mirroring where `Filter Existing Mapping` sits relative to `Condition IsRecurring`, i.e. probably needs to sit in the `Condition IsRecurring` → `False` (one-off) branch, in roughly the position `Filter Existing Mapping` occupies on the `True` (recurring) side.
 
-Only 5 fields written: `Title`, `SeriesMasterId`, `MeetingTitle`, `SectionPagesUrl`, `Status`. No `MeetingId`, no `PageSelfUrl` at this point (that's added later, presumably via a separate PATCH-style update once the page itself exists — not yet inspected in detail).
-
-This action sits inside `Condition Should Write Mapping` → `True`, itself nested under `Condition Section Exists Recurring` — i.e. it only ever fires on the **recurring** path. Consistent with everything else found: one-off meetings never reach this action at all.
-
-## Confirmed: the one-off path has zero SharePoint mapping-list interaction, anywhere
-
-Three actions checked directly, closing out the last open question from earlier in the day:
-
-**`Set varOneNoteResolverResult Created OneOff`**:
+**3. Fix `Set varOutputPageSelfUrl Existing`'s blank `value` field** — the original Pattern 6 defect from 30 July. Once (2) exists, the correct expression is analogous to the recurring path's `varFinalExistingPageSelfUrl` population:
 ```json
-{ "type": "SetVariable", "inputs": { "name": "varOneNoteResolverResult", "value": "CreatedSection" } }
+"value": "@first(body('Filter_Existing_Mapping_OneOff'))?['PageSelfUrl']"
 ```
-Pure status-flag string, same shape as the recurring equivalent. No mapping/CalendarEventId reference.
+(Exact source action name depends on what gets built in step 2 — adjust to match.)
 
-**`Set varTargetSectionPagesUrl OneOff Created`**:
-```json
-{ "type": "SetVariable", "inputs": { "name": "varTargetSectionPagesUrl", "value": "@outputs('Create_Section_OneOff')?['body']?['pagesUrl']" } }
-```
-Pulls straight from the just-created section's own API response. Purely in-memory, no SharePoint call.
+**4. New actions: one-off equivalents of the two-write lifecycle:**
+- **`Send an HTTP request to SharePoint OneOff`** — same shape as the recurring write, but with `MeetingId` as the primary key instead of `SeriesMasterId` (which one-off meetings don't have — likely omit or leave blank), gated by an equivalent of `Condition Should Write Mapping` for the one-off path (i.e. only write if `Filter Existing Mapping OneOff` found nothing).
+- **`HTTP Update SP PageSelfUrl OneOff`** — same `if()`-based item-targeting pattern as the recurring `HTTP Update SP PageSelfUrl`, `runAfter` the one-off page-self-URL Compose action, referencing `Filter Existing Mapping OneOff` / the one-off create-write's returned ID instead of the recurring equivalents.
 
-**`Create Page OneOff`**:
-```json
-{
-  "type": "OpenApiConnection",
-  "inputs": {
-    "parameters": {
-      "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes",
-      "sectionId": "@variables('varTargetSectionPagesUrl')",
-      "pageContent": "<p class=\"editor-paragraph\">@{triggerBody()?['text_3']}</p>"
-    },
-    "host": { "connection": "shared_onenote-1", "operationId": "CreatePageInSection" }
-  }
-}
-```
-A plain OneNote page-creation call. No SharePoint write.
+**Suggested placement:** mirror the recurring path's structure exactly — Write (4a) goes near `Condition Section Exists OneOff` (parallel to where the recurring write sits near `Condition Section Exists Recurring`); Update (4b) goes after `Create Page OneOff` / its Compose-PageSelfUrl step, parallel to where `HTTP Update SP PageSelfUrl` sits after `Create OneNote Page`.
 
-**This confirms, definitively, the full shape of the gap:** the one-off path creates OneNote sections and pages entirely in isolation from the SharePoint mapping list. It has no memory of anything it does. Every recapture of a one-off meeting effectively starts from zero.
+## Before building — final checks
 
-## Working design, now reasonably well-evidenced
-
-1. **Extend `Send an HTTP request to SharePoint`'s write** (or add an equivalent one-off write, mirroring it) to also populate `MeetingId` with `CalendarEventId` — for every meeting, recurring or one-off. This is a body-payload change to an existing action, not new infrastructure.
-2. **Add a one-off equivalent of `Filter Existing Mapping`**, filtering the same list by `MeetingId = triggerBody CalendarEventId` instead of `SeriesMasterId`. Mirrors the existing recurring-path pattern closely.
-3. **Wire that result into `varOutputPageSelfUrl Existing`'s currently-blank `value` field** — the Pattern 6 defect confirmed on 30 July — the same way the recurring path wires `Filter_Existing_Mapping`'s result through to `varFinalExistingPageSelfUrl`.
-4. **Add a one-off write path** so that once a one-off meeting's page is first created, a mapping row gets written for it too (mirroring `Send an HTTP request to SharePoint`, keyed by `MeetingId` instead of `SeriesMasterId`) — otherwise step 2 will never find anything on a *second* capture of the same one-off meeting, since nothing would have written the row the first time.
-
-Point 4 is the piece with no existing analogue to copy from directly (the recurring path's initial write happens during section resolution, which one-off meetings do have — `Condition Section Exists OneOff` — so the natural place to add the write is likely inside that condition's branches, mirroring where the recurring write sits under `Condition Section Exists Recurring`).
-
-## `MeetingId`'s intended purpose — confirmed by David (31 July)
-
-`MeetingId` was scoped for a planned future feature: finding post-meeting transcriptions, recordings, or action items and posting them into the correct OneNote meeting page. This is compatible with — arguably the same underlying need as — using it to resolve the existing page for one-off recapture: both require a stable identifier for "this specific meeting instance."
-
-**One risk worth flagging, not yet resolved:** Teams transcript/recording retrieval (via Graph `onlineMeetings` / `callRecords`) sometimes keys off a **Teams online-meeting ID** (often derived from `joinWebUrl`), which is not always identical to the plain Outlook **calendar event ID** this doc has been calling `CalendarEventId`. If the future transcription feature specifically needs the Teams online-meeting ID rather than the calendar event ID, storing `CalendarEventId` in `MeetingId` now could mean that column holds the "wrong" identifier for that later feature, even though it's the right one for today's fix. Not a blocker — `CalendarEventId` is unambiguously correct for resolving the OneNote page — but worth a deliberate check (with whoever scoped the transcription feature, if not David alone) before treating `MeetingId` as permanently settled for both purposes.
-
-## Still open / not yet confirmed
-
-1. **The `Status`/empty-column discrepancy** noted above.
-2. **Whatever action updates `PageSelfUrl` after page creation** (referenced but not yet directly inspected) — this is the natural template for point 4 above, since it's the existing pattern for "update a mapping row after a page now exists."
-3. **Whether `CalendarEventId` (Outlook event ID) is the right long-term value for `MeetingId`**, given the Teams-online-meeting-ID risk noted above — may be worth revisiting once the transcription feature is actually scoped.
+1. **Confirm `text_4` is really `CalendarEventId` on Flow B's own trigger schema** (not just assumed from the Topic YAML's binding) — open `When an agent calls the flow`'s Code view and check the `text_4` schema title directly.
+2. **Confirm the exact action names to branch off** by viewing `Condition IsRecurring`'s `False` branch and `Condition Section Exists OneOff`'s structure directly, to place the four new actions in exactly the right spot rather than guessing from the pattern alone.
+3. **Re-check the `Status` column discrepancy** noted above — low priority, but cheap to resolve while already in the list.
+4. Once built, needs a live test recapturing the same one-off meeting twice, checking Peek Code + raw run output at each new action — same evidence-first standard as the 30 July investigation, not just "it looks right."
 
 ## Status
 
-- **Evidence gathering essentially complete.** The shape of both the defect and a credible fix are now well-supported by direct Code view evidence, not inference from action names alone.
-- **Still not a finalised, ready-to-build design.** The open items above should be resolved first — in particular, finding the `PageSelfUrl`-update action would directly template point 4's one-off write, removing the last piece of real uncertainty.
-- **Recommended next step:** locate and inspect the `PageSelfUrl` post-creation update action (likely `HTTP Update SP PageSelfUrl`, seen in the Go to Operation list), then draft a concrete, numbered build plan referencing exact action names and exact expressions — at that point this becomes buildable rather than merely well-evidenced.
+**Design complete and buildable.** Not yet implemented. Recommend treating the "before building" checks above as the first 15 minutes of the next build session, then implementing points 1–4 of the build plan in order, then live-testing per point 4 of "before building."
