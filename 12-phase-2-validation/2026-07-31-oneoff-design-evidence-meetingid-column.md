@@ -1,5 +1,20 @@
 # One-Off Existing-Page Resolution — Design, 31 July 2026 (FINAL — Option A decided)
 
+## ⏭ START HERE NEXT SESSION
+
+**Status: design finalised, zero open questions. This session is a pure build session — implement the 9 numbered steps below, in order, then test.**
+
+**The fix, one sentence:** give one-off meetings the same "remember this meeting's page" mapping-table logic recurring meetings already have (keyed on `MeetingId` instead of `SeriesMasterId`), then switch two conditions that currently only look at recurring-branch data to read from shared variables instead, so the create-vs-reuse decision works correctly regardless of meeting type.
+
+**Do this, in order:**
+1. Open Flow B (`PA - Resolve OneNote Meeting Section - v2 Clean Build`) in the Designer.
+2. Build the 9 steps under "Final build plan" below — copy-paste-ready JSON/expressions are given for each. No further investigation needed first.
+3. **Do not skip the recurring-path regression test** in the checklist's step 7 — steps 6 and 7 of the build plan edit two expressions that currently work correctly for recurring meetings.
+4. Once built and tested, this should close out the original 30 July `BadRequest` bug for good — update `handover-2026-07-30-oneoff-badrequest-live-trace-confirmation.md`'s status to reflect that once confirmed live.
+5. Log the fix as its own entry in `amendment-log.md` (still outstanding backfill, per the 20 July gap-analysis doc — this is a good moment to also catch up that backfill while it's fresh, since several fixes have accumulated: the two 27 July Pattern-6 fixes, this one, and today's finding of a *third* Pattern-6-adjacent placeholder value).
+
+---
+
 ## Purpose
 
 This doc collects the evidence and final design to fix the one-off existing-page gap identified in `handover-2026-07-30-oneoff-badrequest-live-trace-confirmation.md`. **Design is now finalised.** David has decided on Option A (below) for the one open architectural question. **No fix has been implemented in this session** — this is the complete design, ready for a build session.
