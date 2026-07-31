@@ -124,14 +124,20 @@ A plain OneNote page-creation call. No SharePoint write.
 
 Point 4 is the piece with no existing analogue to copy from directly (the recurring path's initial write happens during section resolution, which one-off meetings do have — `Condition Section Exists OneOff` — so the natural place to add the write is likely inside that condition's branches, mirroring where the recurring write sits under `Condition Section Exists Recurring`).
 
+## `MeetingId`'s intended purpose — confirmed by David (31 July)
+
+`MeetingId` was scoped for a planned future feature: finding post-meeting transcriptions, recordings, or action items and posting them into the correct OneNote meeting page. This is compatible with — arguably the same underlying need as — using it to resolve the existing page for one-off recapture: both require a stable identifier for "this specific meeting instance."
+
+**One risk worth flagging, not yet resolved:** Teams transcript/recording retrieval (via Graph `onlineMeetings` / `callRecords`) sometimes keys off a **Teams online-meeting ID** (often derived from `joinWebUrl`), which is not always identical to the plain Outlook **calendar event ID** this doc has been calling `CalendarEventId`. If the future transcription feature specifically needs the Teams online-meeting ID rather than the calendar event ID, storing `CalendarEventId` in `MeetingId` now could mean that column holds the "wrong" identifier for that later feature, even though it's the right one for today's fix. Not a blocker — `CalendarEventId` is unambiguously correct for resolving the OneNote page — but worth a deliberate check (with whoever scoped the transcription feature, if not David alone) before treating `MeetingId` as permanently settled for both purposes.
+
 ## Still open / not yet confirmed
 
-1. **Whether `MeetingId` was already intended for exactly this purpose** — worth asking David directly rather than continuing to infer it.
-2. **The `Status`/empty-column discrepancy** noted above.
-3. **Whatever action updates `PageSelfUrl` after page creation** (referenced but not yet directly inspected) — this is the natural template for point 4 above, since it's the existing pattern for "update a mapping row after a page now exists."
+1. **The `Status`/empty-column discrepancy** noted above.
+2. **Whatever action updates `PageSelfUrl` after page creation** (referenced but not yet directly inspected) — this is the natural template for point 4 above, since it's the existing pattern for "update a mapping row after a page now exists."
+3. **Whether `CalendarEventId` (Outlook event ID) is the right long-term value for `MeetingId`**, given the Teams-online-meeting-ID risk noted above — may be worth revisiting once the transcription feature is actually scoped.
 
 ## Status
 
 - **Evidence gathering essentially complete.** The shape of both the defect and a credible fix are now well-supported by direct Code view evidence, not inference from action names alone.
-- **Still not a finalised, ready-to-build design.** The three open items above should be resolved first — in particular, finding the `PageSelfUrl`-update action would directly template point 4's one-off write, removing the last piece of real uncertainty.
+- **Still not a finalised, ready-to-build design.** The open items above should be resolved first — in particular, finding the `PageSelfUrl`-update action would directly template point 4's one-off write, removing the last piece of real uncertainty.
 - **Recommended next step:** locate and inspect the `PageSelfUrl` post-creation update action (likely `HTTP Update SP PageSelfUrl`, seen in the Go to Operation list), then draft a concrete, numbered build plan referencing exact action names and exact expressions — at that point this becomes buildable rather than merely well-evidenced.
