@@ -1,0 +1,233 @@
+kind: AdaptiveDialog
+modelDescription: |-
+  Captures meeting notes by finding a user's Outlook meeting, allowing the user to select from multiple meetings, and creating a OneNote page for the selected meeting.
+
+  Users might say: capture meetings, capture meeting, meeting capture, capture meeting notes, create meeting notes, record meeting notes.
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    triggerQueries:
+      - capture meeting notes
+      - capture notes for
+      - record meeting notes
+      - create meeting notes
+      - capture
+
+  actions:
+    - kind: SetVariable
+      id: setVariable_2VpZMo
+      displayName: C1_Set_DateContext
+      variable: Topic.DateContext
+      value: =Text(Today(), "yyyy-MM-dd")
+
+    - kind: InvokeFlowAction
+      id: invokeFlowAction_eBUGn8
+      displayName: C2_Call_FlowA_Initial
+      input:
+        binding:
+          text_1: NONE
+          text_3: =Topic.DateContext
+
+      output:
+        binding:
+          bodypreview: Topic.BodyPreview
+          calendareventid: Topic.CalendarEventId
+          candidatelist: Topic.CandidateList
+          isrecurring: Topic.IsRecurring
+          matchcount: Topic.MatchCount
+          meetingtitle: Topic.MeetingTitle
+          onlinemeetingurl: Topic.OnlineMeetingUrl
+          seriesmasterid: Topic.SeriesMasterId
+          status: Topic.Status
+
+      flowId: d9d7ccf7-7d61-f111-a826-6045bde03856
+
+    - kind: SetMultipleVariables
+      id: setVariable_FXirQu
+      assignments:
+        - variable: Topic.MatchCount
+          value: =Text(Topic.MatchCount)
+
+        - variable: Topic.IsRecurring
+          value: =Text(Topic.IsRecurring)
+
+        - variable: Topic.MeetingTitle
+          value: =Text(Topic.MeetingTitle)
+
+        - variable: Topic.SeriesMasterId
+          value: =Text(Topic.SeriesMasterId)
+
+        - variable: Topic.CalendarEventId
+          value: =Text(Topic.CalendarEventId)
+
+        - variable: Topic.BodyPreview
+          value: =Text(Topic.BodyPreview)
+
+        - variable: Topic.OnlineMeetingUrl
+          value: =Text(Topic.OnlineMeetingUrl)
+
+    - kind: ConditionGroup
+      id: conditionGroup_k0eXvc
+      conditions:
+        - id: conditionItem_oRVxZZ
+          condition: =Topic.MatchCount = Text(0)
+          displayName: C4_Check_MatchCount
+          actions:
+            - kind: SendActivity
+              id: sendActivity_ZdhIF0
+              displayName: C4A_NoMatch_Message (
+              activity: I couldn't find any meetings for that day. Type P for previous day, N for next day, or a date (e.g. 28 Jun) to navigate.
+
+      elseActions:
+        - kind: SendActivity
+          id: sendActivity_DKsGOT
+          displayName: C5_Display_CandidateList
+          activity: "{Topic.CandidateList}"
+
+        - kind: Question
+          id: question_XFJmje
+          displayName: C6_Ask_SelectedNumber
+          interruptionPolicy:
+            allowInterruption: true
+
+          variable: Topic.TopicSelectedNumber
+          prompt: |-
+            To change day select letter or enter date:
+            - P for previous day
+            - N for next day
+            - Specific date (e.g. 23 Oct)
+          entity:
+            kind: StringPrebuiltEntity
+            sensitivityLevel: None
+
+        - kind: ConditionGroup
+          id: conditionGroup_BsGPk1
+          conditions:
+            - id: conditionItem_2NuHzx
+              condition: =Topic.TopicSelectedNumber = "P" || Topic.TopicSelectedNumber = "p"
+              displayName: C6_Check_Input
+              actions:
+                - kind: SetVariable
+                  id: setVariable_X0gXHk
+                  variable: Topic.DateContext
+                  value: =Text(DateAdd(DateValue(Topic.DateContext), -1, TimeUnit.Days), "yyyy-MM-dd")
+
+                - kind: GotoAction
+                  id: CHYopX
+                  actionId: invokeFlowAction_eBUGn8
+
+            - id: conditionItem_yERjqE
+              condition: =Topic.TopicSelectedNumber = "N" || Topic.TopicSelectedNumber = "n"
+              displayName: C6B_Check_N
+              actions:
+                - kind: SetVariable
+                  id: setVariable_c7PbLR
+                  variable: Topic.DateContext
+                  value: =Text(DateAdd(DateValue(Topic.DateContext), 1, TimeUnit.Days), "yyyy-MM-dd")
+
+                - kind: GotoAction
+                  id: I8IQMw
+                  actionId: invokeFlowAction_eBUGn8
+
+            - id: conditionItem_Qz7mKp
+              condition: =IsError(Value(Topic.TopicSelectedNumber)) && !IsError(DateValue(Topic.TopicSelectedNumber))
+              displayName: C6C_Check_Date
+              actions:
+                - kind: SetVariable
+                  id: setVariable_Rk3nWx
+                  variable: Topic.DateContext
+                  value: =Text(DateValue(Topic.TopicSelectedNumber), "yyyy-MM-dd")
+
+                - kind: GotoAction
+                  id: Tb9vLh
+                  actionId: invokeFlowAction_eBUGn8
+
+        - kind: InvokeFlowAction
+          id: invokeFlowAction_bIIKPf
+          input:
+            binding:
+              text_1: =Topic.TopicSelectedNumber
+              text_3: =Topic.DateContext
+
+          output:
+            binding:
+              bodypreview: Topic.BodyPreview
+              calendareventid: Topic.CalendarEventId
+              candidatelist: Topic.CandidateList
+              isrecurring: Topic.IsRecurring
+              matchcount: Topic.MatchCount
+              meetingtitle: Topic.MeetingTitle
+              onlinemeetingurl: Topic.OnlineMeetingUrl
+              seriesmasterid: Topic.SeriesMasterId
+              status: Topic.Status
+
+          flowId: d9d7ccf7-7d61-f111-a826-6045bde03856
+
+        - kind: SendActivity
+          id: sendActivity_AAMZ3a
+          displayName: C9_Confirm_SelectedMeeting
+          activity: "Great — I’ve found your meeting: {Topic.MeetingTitle}"
+
+        - kind: SetVariable
+          id: setVariable_PageTitle01
+          displayName: C9B_Set_PageTitle
+          variable: Topic.PageTitle
+          value: =If(Topic.IsRecurring = "true", Text(DateValue(Topic.DateContext), "d MMM yyyy"), Concatenate(Text(DateValue(Topic.DateContext), "d MMM yyyy"), " - ", Topic.MeetingTitle))
+
+        - kind: InvokeFlowAction
+          id: invokeFlowAction_bWHHeg
+          displayName: C10_Call_FlowB_Create_Page
+          input:
+            binding:
+              text: =Topic.IsRecurring
+              text_1: =Topic.MeetingTitle
+              text_2: =Topic.SeriesMasterId
+              text_3: =Concatenate("<html><head><title>", Topic.PageTitle, "</title></head><body>", If(Topic.IsRecurring = "true", Concatenate("<p><strong>", Topic.MeetingTitle, "</strong></p>"), ""), If(Len(Topic.BodyPreview) > 0, Concatenate("<h2>Meeting Details</h2>", Topic.BodyPreview), ""), "<p>Meeting notes captured via Teams OneNote Meeting Capture agent.</p>", "</body></html>")
+              text_4: =Topic.CalendarEventId
+
+          output:
+            binding:
+              outagentresponsesummary: Topic.OutAgentResponseSummary
+              outbranchresult: Topic.OutBranchResult
+              outcreatedpagelink: Topic.OutCreatedPageLink
+              outcreatedpageselfurl: Topic.OutCreatedPageSelfUrl
+              outexistingpageselfurl: Topic.OutExistingPageSelfUrl
+              outfinaltargetsectionpagesurl: Topic.OutFinalTargetSectionPagesUrl
+              outisrecurring: Topic.OutIsRecurring
+              outmatchcount: Topic.OutMatchCount
+              outmeetingtitle: Topic.OutMeetingTitle
+              outonenoteresolverresult: Topic.OutOneNoteResolverResult
+              outpageaction: Topic.OutPageAction
+              outpagedecision: Topic.OutPageDecision
+              outpagehtml: Topic.OutPageHtml
+              outpageroute: Topic.OutPageRoute
+              outresolverresult: Topic.OutResolverResult
+              outseriesmasterid: Topic.OutSeriesMasterId
+              outspitemcount: Topic.OutSPItemCount
+              outstatus: Topic.OutStatus
+              outtargetsectionpagesurl: Topic.OutTargetSectionPagesUrl
+              outupdatehtmlfragment: Topic.OutUpdateHtmlFragment
+
+          flowId: ed112c88-b94b-f111-bec6-002248a38052
+
+        - kind: ConditionGroup
+          id: conditionGroup_7KyK2P
+          conditions:
+            - id: conditionItem_zpJbO2
+              condition: =Topic.OutStatus = "OK"
+              displayName: C11_Check_OutStatus
+              actions:
+                - kind: SendActivity
+                  id: sendActivity_VCuFOo
+                  displayName: C12_Success
+                  activity: "Great news! Your meeting notes for {Topic.MeetingTitle} have been saved to OneNote. Here's your page link: {Topic.OutCreatedPageLink}"
+
+          elseActions:
+            - kind: SendActivity
+              id: sendActivity_nQYpmV
+              displayName: C12_Error
+              activity: I'm sorry, something went wrong saving your meeting notes. Please try again.
+
+inputType: {}
+outputType: {}
