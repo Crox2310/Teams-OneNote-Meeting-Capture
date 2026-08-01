@@ -77,20 +77,31 @@ This is load-bearing for `Update_page_content_Existing_Branch`'s `pageId` parame
 - Typing a URI expression directly via the fx/expression editor can cause the entire field to become the expression (prefixing a stray `@`) rather than treating it as literal text with an embedded `@{...}`. Workaround: type the literal path text first as plain text, then insert only the `if(...)` portion via the dynamic content picker so it becomes an inline `@{...}` chip.
 - Copy-pasting Code view content into a field literally (including the `"parameters/uri": ` JSON key label) is easy to do by accident when working from a previous Code view screenshot — always re-verify the actual field content, not just that something was typed.
 
-### OF10 — new defect found mid-session, not in original design doc
+### OF10 — new defect found mid-session, not in original design doc (two-attempt fix — read carefully)
 
 **`Condition_Mapping_Exists`'s True branch was previously unreachable for one-off meetings** (per the 30/31 July docs) because `varFinalMatchCount` was never populated on that path. **OF05c fixes exactly that gap** — which means this previously-dead branch became live for one-off meetings for the first time as a side effect of today's build.
 
-Found: `Set_varTargetSectionPagesUrl_ExistingMapping` inside that branch contained an `if()` expression with **both arms pointing at the same recurring-only action** (`Filter_Existing_Mapping`) — an apparent unfinished stub from an earlier session, never triggered before because the branch was unreachable. Left as-is, this would likely throw a runtime error (referencing an action that never ran) the first time a one-off meeting with an existing mapping row hit this path — i.e., on any one-off meeting's second-or-later recapture, once OF09 starts successfully writing rows.
+Found: `Set_varTargetSectionPagesUrl_ExistingMapping` inside that branch contained an `if()` expression with **both arms pointing at the same recurring-only action** (`Filter_Existing_Mapping`) — an apparent unfinished stub from an earlier session, never triggered before because the branch was unreachable. Left as-is, this would likely throw a runtime error (referencing an action that never ran) the first time a one-off meeting with an existing mapping row hit this path.
 
-**Fix applied:**
+**First attempt (WRONG — caught by Flow Checker before publish, never went live):**
 ```
 if(equals(toLower(string(triggerBody()?['IsRecurring'])), 'true'),
    first(body('Filter_Existing_Mapping'))?['SectionPagesUrl'],
    first(body('OF01_-_Filter_Existing_Mapping_OneOff'))?['SectionPagesUrl'])
 ```
+This referenced `OF01_-_Filter_Existing_Mapping_OneOff`'s `body()` output directly from `Condition_Mapping_Exists`. **This is invalid** — `OF01` only exists inside `Condition_IsRecurring`'s False branch, which closes before `Condition_Mapping_Exists` (a sibling condition further down the flow) runs. Power Automate scopes action outputs to the `If` block they were created in; once that block closes, `body()`/`outputs()` references to actions inside it are out of scope everywhere else, because the engine can't guarantee they ran. The Flow Checker's static validation caught this correctly before any publish — **"Errors (0)" after every fix should be confirmed via Flow Checker, not just Code view, before publishing.**
 
-**Open dependency to verify in testing:** this assumes the SharePoint mapping list's `SectionPagesUrl` column gets populated correctly for one-off rows by OF09a/OF09b, the same way it does for recurring rows. Worth checking directly in the SharePoint list during the test session, not just inferring from the flow logic.
+**Corrected fix (actually applied, Flow Checker clean — 0 errors):**
+```
+if(equals(toLower(string(triggerBody()?['IsRecurring'])), 'true'),
+   first(body('Filter_Existing_Mapping'))?['SectionPagesUrl'],
+   variables('varTargetSectionPagesUrl'))
+```
+Rather than reach into `OF01`'s output from outside its scope, this reuses the same principle OF05 already established: capture what's needed into a **variable** while still inside the branch it was computed in, then read the variable later — never reference another branch's `body()`/`outputs()` from outside that branch. In this case no new capture was even needed: `varTargetSectionPagesUrl` is already correctly set for one-off meetings by `Condition_Section_Exists_OneOff` (`Set_varTargetSectionPagesUrl_OneOff_Exists` / `..._Created`), earlier in the same execution, before `Condition_Mapping_Exists` is ever reached. The one-off arm of this `if()` now just re-reads that variable — a safe no-op for the one-off path, leaving the variable exactly as it already was.
+
+**Lesson for future sessions:** the general pattern that caused both the original bug (recurring-only `outputs()` references used for both meeting types) and this near-miss (an out-of-scope `body()` reference) is the same: **`body()` and `outputs()` are only valid within the `If` branch that produced them; `variables()` persist across the whole flow.** When a fix needs data from inside a conditional branch to be used somewhere else in the flow, capture it into a variable before leaving that branch — never reference the action directly from outside.
+
+**Open dependency to verify in testing:** this assumes the SharePoint mapping list's `SectionPagesUrl` column gets populated correctly for one-off rows by OF09a/OF09b, the same way it does for recurring rows, and that `varTargetSectionPagesUrl` genuinely still holds the right value by the time `Condition_Mapping_Exists` runs (not overwritten in between). Worth checking directly in the SharePoint list and via a live trace during the test session, not just inferring from the flow logic.
 
 ---
 
@@ -107,7 +118,7 @@ if(equals(toLower(string(triggerBody()?['IsRecurring'])), 'true'),
 
 **Flow:** Flow B
 **Defect:** `Set_varTargetSectionPagesUrl_ExistingMapping`'s IsRecurring-aware `if()` had both arms referencing the same recurring-only action, made newly reachable for one-off meetings as a side effect of AMEND-2026-08-01-001.
-**Fix applied:** false/one-off arm repointed to `OF01_-_Filter_Existing_Mapping_OneOff`.
+**Fix applied (corrected):** false/one-off arm repointed to `variables('varTargetSectionPagesUrl')`, which `Condition_Section_Exists_OneOff` already correctly populates earlier in the one-off execution path. (An initial fix attempt referencing `body('OF01_-_Filter_Existing_Mapping_OneOff')` directly was caught as an out-of-scope reference by Flow Checker before publish and corrected — see full write-up in the OF10 section above.)
 **Live-verified:** [pending next session]
 
 ---
