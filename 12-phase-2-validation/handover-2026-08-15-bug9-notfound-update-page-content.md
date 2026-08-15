@@ -1,44 +1,51 @@
-# Bug 9 — NotFound on Update page content (Existing Branch) — discovered during Bug 5 retest, 15 August 2026
+# Bug 9 — NotFound on Update page content (Existing Branch) — ROOT CAUSE CONFIRMED, 15 August 2026
 
-## Status: NEW, UNFIXED, root cause narrowed (updated same session)
+## Status: ROOT CAUSE CONFIRMED. Not yet fixed. Two candidate fixes identified below.
 
 ## Context
 
-While retesting Bug 5 (one-off recapture, previously failing with empty `sectionId` on `Create_Page_OneOff`), a second run using the same `MeetingId` as an earlier successful one-off capture today revealed that **Bug 5's original symptom is resolved**, but exposed a new, distinct failure.
+Discovered while retesting Bug 5 (one-off recapture, previously failing with empty `sectionId` on `Create_Page_OneOff`). Bug 5's original symptom is confirmed resolved (see below), but a new, distinct failure was found and traced to a genuine schema/logic mismatch — not corruption.
 
 ## Bug 5 status: confirmed fixed (original symptom)
 
 - Test 1 (fresh `MeetingId: bug5-retest-15aug-2`, novel title, `IsRecurring: false`): routed correctly through `Create_OneNote_Page` (standard path, since no existing page was found) — succeeded in 0.7s. `Create_Page_OneOff` correctly skipped (dependent condition not met).
 - Test 2 (same `MeetingId` reused, forcing an existing-mapping match): `Condition Is Genuine Existing Page` correctly evaluated **True** — `varOneNoteResolverResult` correctly resolved to `ExistingSection`. The flow correctly routed to the "update existing page" branch rather than falling through to `Create_Page_OneOff` with an empty `sectionId` — **the original Bug 5 symptom did not reproduce.**
 
-This is a real, positive outcome — Bug 5's root cause (corrupted `varTargetSectionPagesUrl`/`varOneNoteResolverResult` SetVariable actions, fixed earlier this session) appears to have resolved the empty-`sectionId` failure as expected.
+Bug 5's root cause (corrupted `varTargetSectionPagesUrl`/`varOneNoteResolverResult` SetVariable actions, fixed earlier this session) is confirmed resolved.
 
-## Bug 9 finding: `NotFound` on `Update page content Existing Branch`
+## Bug 9: `NotFound` on `Update page content Existing Branch`
 
 - **Action**: `Update page content Existing Branch` (inside `Apply to each Existing Section`, inside `Condition Is Genuine Existing Page` → True branch)
 - **Error**: `NotFound`
-- **Timestamp**: 15 August 2026, ~17:47
+- **Test 2 timestamp**: 15 August 2026, ~17:47
 
-### Root cause narrowed — CONFIRMED, not just theory
+### Investigation trail
 
-Checked the `RecurringMeetingSectionMap` SharePoint list directly after Test 2. **Result: the list still contains only one row — the original "SC Eng Leadership Weekly" recurring mapping. There is NO row for `MeetingId: bug5-retest-15aug-2` or `MeetingTitle: Bug 5 Retest 15 Aug`.** All mapping-specific columns (`PageSelfUrl`, `PageWebUrl`, `MeetingId`, `SectionId`) are empty across the board in the only existing row (which is the recurring-branch row and was never expected to have MeetingId populated — recurring uses `SeriesMasterId` instead).
+1. **First theory (WRONG, since corrected)**: suspected the SharePoint mapping row was never written by `OF09a`, based on an initial (stale, unrefreshed) view of the `RecurringMeetingSectionMap` list that appeared to show only one row.
+2. **Corrected after refreshing the list view**: the mapping row from Test 1 *does* exist — `OF09a — Send an HTTP request to SharePoint (OneOff)` genuinely succeeded (`statusCode: 201`, `Id: 109`, confirmed via that run's raw outputs). The row shows `MeetingTitle: Mtg - Bug 5 Retest 15 Aug`, `MeetingId: bug5-retest-15aug-2`, `Status: Active`, and populated `PageSelfUrl`/`PageWebUrl` values. So the insert itself worked.
+3. **Root cause found**: this row is flagged in SharePoint's UI with a "Required info" banner and appears under "Items that need attention." Opening the item confirms: **`SeriesMasterId` is a required field (red asterisk) in the list schema, and this row has it blank** — shown as "Enter value here" in red.
 
-**This means: Test 1's page creation succeeded in OneNote, but the corresponding SharePoint mapping write for the one-off branch (`OF09a — Send an HTTP request to SharePoint (OneOff)`) either did not run, or ran but did not persist a row.**
+### Confirmed mechanism
 
-This reframes the bug:
-- Test 2's `OF01 — Filter_Existing_Mapping_OneOff` (which queries the SharePoint list by `MeetingId`) would have found **zero rows** for `bug5-retest-15aug-2` — meaning the SharePoint-based lookup should have produced `PAGE_NOT_FOUND`.
-- But the run instead correctly identified the section already existed via a **different signal** — OneNote's own section listing (`Get_Sections_OneOff` / `Filter_OneNote_Section_OneOff`) found the section by name, independent of the SharePoint mapping table, and set `varOneNoteResolverResult = ExistingSection` via that path.
-- The flow then tried to update the "existing page" using a page reference (`varOutputPageSelfUrl` / `Compose_ExistingPageId`) that was never legitimately populated, because there was no SharePoint mapping row to source it from — producing the `NotFound` error when it tried to update a page ID that doesn't actually resolve.
+- The `RecurringMeetingSectionMap` SharePoint list has `SeriesMasterId` configured as a **required column**.
+- The **one-off branch's** insert (`OF09a — Send an HTTP request to SharePoint (OneOff)`) never includes `SeriesMasterId` in its payload — by design, since one-off meetings have no series master. Its body only sends `Title`, `MeetingId`, `MeetingTitle`, `SectionPagesUrl`, `Status`.
+- SharePoint's REST API accepted the insert anyway (`201 Created`), but the resulting item is left in an incomplete/flagged state in the SharePoint UI (visible as "needs attention").
+- This is a genuine **schema/logic parity gap** between the recurring branch (which always populates `SeriesMasterId`) and the one-off branch (which structurally cannot, since the field doesn't apply) — not a corruption artifact, and not the same mechanism as Bugs 4–8 documented elsewhere this session.
+- Working hypothesis for *why* this produces `NotFound` downstream: some SharePoint connector operations, filtered views, or list-level validation behave inconsistently with items sitting in an incomplete-required-field state, which may affect how a later query or lookup against this row resolves. **This causal link (incomplete row → NotFound on OneNote update) has not been definitively proven — it's the most likely explanation given the timing and the fact this is the only distinguishing anomaly found on the item, but it hasn't been isolated by removing the flagged state and re-testing.**
 
-**Conclusion: this is most likely a genuine logic gap — `OF09a` failing to write or persist a mapping row on the one-off Created path — rather than a corruption/data-integrity issue.** Worth checking whether `OF09a` even executed during Test 1's run (via Activity/run history for that earlier run) to confirm whether it silently failed, was skipped, or ran but the write itself didn't take.
+### Candidate fixes (not yet applied)
+
+1. **Make `SeriesMasterId` optional in the SharePoint list schema.** Simplest fix — the field is genuinely inapplicable to one-off meetings, so removing the required constraint reflects the actual data model. Risk: need to confirm no other part of the flow or any other consumer of this list relies on `SeriesMasterId` always being populated.
+2. **Have `OF09a`'s insert send a placeholder value for `SeriesMasterId`** (e.g., reuse `MeetingId`, or a literal sentinel like `"N/A"` or `"one-off"`) to satisfy the required-field constraint without changing the schema. Lower risk to other consumers of the list, but adds a slightly awkward placeholder value that needs documenting so it isn't mistaken for a real series master ID later.
+
+**Recommendation**: option 1 (schema change) is cleaner long-term, since it fixes the actual mismatch rather than working around it. Confirm with whoever owns the SharePoint list/downstream reporting (if any) before changing the schema, in case something else depends on the field being mandatory.
 
 ## Next steps
 
-1. **Pull Test 1's run history** (the run that created the page, ~17:42) and check whether `OF09a — Send an HTTP request to SharePoint (OneOff)` executed, and if so, inspect its raw outputs — did SharePoint actually receive and process the insert?
-2. If `OF09a` did run successfully, check whether the issue is instead that `OF09b-i — Condition Should Insert Mapping (OneOff)`'s gating condition (`length(body('OF01...')) == 0`) evaluated incorrectly, skipping the insert even though it should have run.
-3. Compare against the working recurring-branch equivalent (`Send_an_HTTP_request_to_SharePoint`, non-OneOff, which reliably writes the "SC Eng Leadership Weekly" row) to check for a parity gap between the two branches' mapping-write logic.
-4. Consider: is `Update page content Existing Branch`'s reliance on `varOutputPageSelfUrl` (sourced from the SharePoint mapping) too fragile for a scenario where the OneNote section is found directly but no mapping row exists? A more robust fix might source the page reference from the OneNote section listing itself in this fallback case, rather than assuming the SharePoint mapping is always populated.
+1. Decide between the two candidate fixes above (schema change vs. placeholder value).
+2. Apply the chosen fix, then re-run the same two-step Bug 5/9 test sequence (fresh one-off capture, then a second run reusing the same `MeetingId`) to confirm `Update page content Existing Branch` now succeeds instead of `NotFound`.
+3. Check whether the *recurring* branch's row created via the Bug 8 test earlier today (also missing `PageSelfUrl` initially, now populated) has any similar "needs attention" flag — if so, this may point to a second required field being inconsistently populated, worth a quick scan of the full schema's required-field list against what each branch's insert actually sends.
 
 ---
 
-*Logged 15 August 2026, updated same session with confirmed root-cause narrowing. See `handover-2026-08-15-session2-part2-recovery-complete-published.md` for full session context.*
+*Logged 15 August 2026. Root cause confirmed same session after an initial incorrect theory (stale list view) was corrected by David spotting the "Required info" flag directly. See `handover-2026-08-15-session2-part2-recovery-complete-published.md` for full session context.*
