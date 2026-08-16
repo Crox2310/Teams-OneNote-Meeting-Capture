@@ -47,10 +47,48 @@ Pattern 6 (`SetVariable` actions missing their `value` key entirely) has recurre
 
 ---
 
+## AMEND-2026-08-16-001 — `Get_Pages_In_Section_Existing_Branch` `sectionId` format mismatch
+
+**Flow:** Flow B, existing-page-update branch (Bug 9 investigation)
+**Defect:** newly-built `Get_Pages_In_Section_Existing_Branch` action (part of the Option 1 page-lookup redesign) sourced its `sectionId` parameter from `items('Apply_to_each_Existing_Section')?['id']` — the bare section GUID. `GetPagesInSection` requires the full `pagesUrl`-style value, not a bare ID, consistent with picklist-style connector fields in this environment.
+**Symptom:** `400 BadRequest — "The section id given in the input is invalid."`
+**Fix applied:** changed `sectionId` to `@items('Apply_to_each_Existing_Section')?['pagesUrl']`, copying the exact expression already proven working on the pre-existing `Update_page_content_Existing_Branch` action in the same loop.
+**Live-verified:** confirmed via isolated re-test; action succeeded post-fix.
+**Full trace:** `handover-2026-08-16-morning-sectionid-fix-and-page-title-gap.md`.
+
+## AMEND-2026-08-16-002 — Bug 9 (`NotFound` on `Update_page_content_Existing_Branch`) — CLOSED via temporary workaround
+
+**Flow:** Flow B, existing-page-update branch
+**Defect:** long-running Bug 9 (first logged 15 August) — pages were never given a real title at creation, defaulting to OneNote's `"Untitled Page"`. Title-based page matching (`Filter_Pages_By_Title`) therefore always returned zero results, and the resulting empty `pageId` caused `Update_page_content_Existing_Branch` to fail.
+**Fix applied (temporary):** `Compose_RealExistingPageId` changed to take the section's first page directly from `Get_Pages_In_Section_Existing_Branch`'s live output, bypassing the broken title match. Explicitly a stopgap — valid only while sections hold exactly one page; will break once real multi-page sections are recaptured.
+**Live-verified:** run trace all-green, raw `204` response from `UpdatePageContent`, and direct visual confirmation of the appended "Automated update" block on the real OneNote page.
+**Superseded by:** AMEND-2026-08-16-003 for pages created after that fix lands; existing untitled pages still rely on this workaround until a one-time backfill or natural rollover.
+**Full trace:** `handover-2026-08-16-bug9-closed-workaround-confirmed.md`.
+
+## AMEND-2026-08-16-003 — Permanent page-title fix, recurring branch (`Create_OneNote_Page`)
+
+**Flow:** Flow B, recurring page-creation path
+**Defect:** root cause of AMEND-2026-08-16-002 — `Create_OneNote_Page`'s `pageContent` connector field only ever accepts a body-content fragment (confirmed via Parameters tab: no dedicated `title` parameter exists on `CreatePageInSection`), so pages were never given a real title.
+**Fix applied:** post-creation title-set via the `UpdatePageContent` connector's `target: "title"` update type, using a live-verified page ID rather than trusting `Create_OneNote_Page`'s own (occasionally not-yet-propagated) output — `Compose_SafePageTitle` → `Create_OneNote_Page` → `Compose_PageSelfUrl_Created` → `Get_Pages_In_Section_Recurring_PostCreate` → `Filter_Pages_By_SelfUrl_Recurring` → `Compose_ConfirmedCreatedPageId` → `Set_PageTitle_Recurring`.
+**Live-verified:** run trace all-green including `Set_PageTitle_Recurring`; real OneNote page confirmed showing the correct title (not "Untitled Page") in the notebook list.
+**Known follow-up issue, NOT yet resolved:** `Set_PageTitle_Recurring` intermittently fails with `404`/OneNote error 20102 even against a freshly-verified page ID — an occasional propagation-delay race narrower than the original bug but not eliminated. A Delay-based mitigation was attempted and abandoned same day due to an Express-mode platform conflict (see `handover-2026-08-16-session-close-express-mode-unstable.md`); a retry/poll (`Do until`) approach is recommended instead for a future session.
+**Full trace:** `handover-2026-08-16-page-title-fix-recurring-confirmed.md`.
+
+## AMEND-2026-08-16-004 — Permanent page-title fix, one-off branch (`Create_Page_OneOff`) — BUILT, NOT YET TESTED
+
+**Flow:** Flow B, one-off stale-mapping edge-case path
+**Defect:** same as AMEND-2026-08-16-003, mirrored for `Create_Page_OneOff`.
+**Fix applied:** identical five-action pattern (`Compose_SafePageTitle_OneOff` → `Create_Page_OneOff` → `Get_Pages_In_Section_OneOff_PostCreate` → `Filter_Pages_By_SelfUrl_OneOff` → `Compose_ConfirmedCreatedPageId_OneOff` → `Set_PageTitle_OneOff`).
+**Status:** Flow Checker clean, published — **but this code path was confirmed to be far narrower than assumed** (only reached via a stale-mapping scenario, not ordinary first-time one-off captures, which already route through the recurring-branch fix above) and has not yet been exercised by any test. Do not treat as confirmed working.
+**Full trace:** `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md`.
+
+---
+
 ## Pending — to be logged once built
 
-- **One-off existing-page resolution fix** (9-step build plan in `2026-07-31-oneoff-design-evidence-meetingid-column.md`) — not yet implemented as of 31 July. Log as `AMEND-2026-08-DD-NNN` once built and live-tested, covering: the `MeetingId`-keyed mapping lookup/write additions, the `Condition_Should_Create_Page` and `Set_varOutputPageLink_Existing` variable-reference changes, and the `Set varOutputPageSelfUrl Existing` value fix (closing out the Pattern 6 instance above).
-- **`OutStatus` differentiation build** (`2026-07-27-flow-b-outstatus-trace.md`) — still the single highest-priority outstanding item per the 20 July gap-analysis doc. Not yet built.
+- **`OutStatus` differentiation build** (`2026-07-27-flow-b-outstatus-trace.md`) — still an outstanding item per the 20 July gap-analysis doc. Not yet built.
+- **Recurring-branch title-set race condition fix** (retry/poll approach, replacing the abandoned Delay-based mitigation) — see AMEND-2026-08-16-003's "known follow-up issue."
+- **One-off branch title fix live confirmation** — see AMEND-2026-08-16-004; needs a deliberately-constructed stale-mapping test.
 
 ---
 
