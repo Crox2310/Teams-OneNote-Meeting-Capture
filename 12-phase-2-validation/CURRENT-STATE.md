@@ -1,6 +1,7 @@
 # CURRENT STATE — Teams-OneNote Meeting Capture (start here)
 
 **Last updated:** 16 August 2026, end of session
+**⚠️ See also:** significant new work happened 20 August 2026 not yet folded into this summary — read `handover-2026-08-20-bug8-resolved-corruption-rootcause.md`, `handover-2026-08-20-incident7-corruption-recovery-published.md`, `design-amendment-2026-08-20-per-occurrence-recurring-pages.md`, `bug-2026-08-20-update-fragment-discards-new-content.md`, and `bug-2026-08-20-fa16-int-crash-date-leak.md` before relying on the summary below. For the current full flow structure, use `flow-reference-2026-08-20-full-peek-code-capture.md` (supersedes the 15 August one).
 **Purpose:** this is the single page to read before anything else in this folder. Everything below is the current, verified truth about the flow. For full investigation detail on any item, follow the linked handover.
 
 ---
@@ -28,23 +29,26 @@ The flow works for the common case. Two real bugs were closed this week (Bug 9, 
 |---|---|---|
 | Recurring title-set intermittent `404` race | Medium | `Set_PageTitle_Recurring` occasionally fails even against a freshly-verified page ID. Delay-based fix attempted and abandoned (see Express mode issue below). **Recommended next approach: `Do until` retry/poll instead of a Delay action.** `handover-2026-08-16-page-title-fix-recurring-confirmed.md` |
 | One-off branch title fix (`Create_Page_OneOff`) | Low | Built, Flow Checker clean, published — but genuinely unconfirmed. Only reachable via a rare stale-mapping edge case, not ordinary captures. `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md` |
-| Bug 9 workaround → real fix | Medium | Currently takes "the section's first page" as a stopgap. Will break once a section legitimately holds 2+ pages. Should be reverted to genuine title-matching once titles are trustworthy everywhere (needs the one-off fix confirmed first). |
+| Bug 9 workaround → real fix | Medium | Currently takes "the section's first page" as a stopgap. Will break once a section legitimately holds 2+ pages. Should be reverted to genuine title-matching once titles are trustworthy everywhere (needs the one-off fix confirmed first). **20 Aug: confirmed still a hard blocker for the per-occurrence-pages design amendment — see `design-amendment-2026-08-20-per-occurrence-recurring-pages.md`.** |
 | Tail-section anomaly | Low-Medium | `Compose SP Item Count` → `Respond to the agent` showed "Not specified"/unreached status in one run this session, cause not diagnosed. Not reproduced or ruled in/out on a clean retest. |
 | Notebook / SharePoint test-data cleanup | Low | Mostly done 16 August; ongoing housekeeping. `2026-08-16-test-data-cleanup-note.md` |
+| **NEW 20 Aug: Update fragment discards new content on recapture** | **High** | `Compose_UpdateHtmlFragment` is a hardcoded string that never includes the fresh `text_3` content — organiser updates are silently discarded on both one-off and recurring recapture. `bug-2026-08-20-update-fragment-discards-new-content.md` |
+| **NEW 20 Aug: FA16 crashes on date text (Flow A)** | **Medium** | `FA16_Compose_SelectedIndex` has no exclusion for date-like text (unlike `FA15`), causing an `int()` crash when a typed date leaks past the Topic's `C6C_Check_Date` interception. Root cause of the leak itself still open. `bug-2026-08-20-fa16-int-crash-date-leak.md` |
+| **NEW 20 Aug: Per-occurrence recurring pages** | Design only, not built | Recurring captures currently update one page per series; David wants one page per occurrence (dated), with same-date recaptures appending. `design-amendment-2026-08-20-per-occurrence-recurring-pages.md` |
 
 ## Known platform issues (not flow bugs — flag to Microsoft)
 
-1. **Mass value-blanking corruption** — a recurring pattern all week where ~26 `SetVariable` actions lose their `value` field simultaneously. Multiple trigger types now confirmed: Designer canvas edits, publish events, and (new 16 August) **flow-level settings changes**.
+1. **Mass value-blanking corruption** — a recurring pattern all week where ~26 `SetVariable` actions lose their `value` field simultaneously. Multiple trigger types now confirmed: Designer canvas edits, publish events, and (new 16 August) **flow-level settings changes**. **20 Aug: 7th instance logged (Incident 7); also found to have masqueraded as a distinct logic bug (Bug 8) — see `handover-2026-08-20-bug8-resolved-corruption-rootcause.md`.**
 2. **Express mode will not stay off** — toggled off and saved explicitly, twice, and reverted to Enabled on its own both times, each time triggering the 26-action corruption above. This is the most operationally serious finding of the week — not mitigated by careful editing discipline, since no Designer edit was involved. See `handover-2026-08-16-session-close-express-mode-unstable.md`.
 3. Various smaller quirks (publish-only validation gaps, self-resolving missing fields, BadGateway masking real success) — see `MICROSOFT-SUPPORT-TICKET-DRAFT-2026-08-15.md` for the full catalogue.
 
-**The Microsoft ticket is drafted but not yet submitted.** David plans to submit next week. Before submitting, fold in the 16 August Express-mode findings (currently the strongest, most reproducible evidence in the whole investigation).
+**The Microsoft ticket is drafted but not yet submitted.** Fold in both the 16 August Express-mode findings and the 20 August "corruption masquerading as a logic bug" finding (Bug 8) before submitting — flagged as a strong new business-impact point.
 
 ## Where to look for detail
 
 - **`amendment-log.md`** — formal, numbered list of every confirmed fix, in order. Best single source for "what changed and why."
-- **`flow-reference-2026-08-16-pre-page-title-fix-backup.md`** — full Peek Code snapshot of the known-good flow state as of this morning. Useful restore reference if corruption strikes again.
-- **Dated `handover-*.md` files** — full investigation narrative for anything above. Filenames describe their content; most recent (16 August) are the most relevant for current work.
+- **`flow-reference-2026-08-20-full-peek-code-capture.md`** — current full Peek Code snapshot (captured via the faster container-level method). Use this over the 15 August version.
+- **Dated `handover-*.md` files** — full investigation narrative for anything above. Filenames describe their content; most recent (20 August) are the most relevant for current work.
 - **`living-audit.md` / `living-audit-topic.md`** — older running audit docs; per earlier notes, entries from before ~25 June may be stale and should be re-verified rather than trusted outright.
 
 ## Before your presentation
