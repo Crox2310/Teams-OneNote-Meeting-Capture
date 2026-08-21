@@ -87,11 +87,25 @@ This is a **new finding**, not previously documented anywhere in the project his
 - Whether this is a **long-standing, previously-unnoticed issue** (possible — the mapping-*write* paths use raw HTTP REST calls via `Send_an_HTTP_request_to_SharePoint` / `HTTP_Update_SP_PageSelfUrl`, not the `Get_items` connector action, so a `Get_items`-specific fault could plausibly have gone unexercised or unnoticed in prior "confirmed live" tests) or a **side effect of today's earlier 22-action corruption incident** (Flow Checker only catches missing *required* values, not wrong-but-structurally-valid ones — a corrupted-but-still-well-formed value wouldn't have been caught by the Flow Checker pass done during recovery).
 - Whether the `shared_sharepointonline` connection itself (as used by `Get_items` specifically, as opposed to the HTTP actions which may use a different connection reference) has any permissions or scope difference worth checking.
 
-### Recommended next steps for this specific issue
-1. Check the `Get_items` action's connection reference specifically — confirm it's using the same, valid, correctly-permissioned SharePoint connection as the other list-interacting actions in the flow.
-2. Consider a diagnostic test of `Get_items` in isolation (e.g. via the scratch-flow pattern established today) pointed at the same list, to see if it reproduces outside Flow B's context.
-3. If it reproduces in isolation, this points away from corruption and toward something list/connection-specific — worth checking SharePoint list view settings, permissions, or a possible content-approval/draft-item state on the row itself (if the list has content approval enabled, unapproved items can be invisible to certain API calls even to the item's own creator, depending on view/API path — worth checking List Settings → Versioning settings for a content approval requirement).
-4. This is independent of FB-04 and should be treated as its own investigation thread, not conflated with the #1 per-occurrence-pages work.
+### Leading hypothesis (reasoned through post-session, not yet tested): SharePoint content approval
+
+Of everything considered, **content approval is the best fit for the evidence** we actually have:
+
+- SharePoint lists can have **"Require content approval for submitted items"** enabled under **List Settings → Versioning settings**. When on, items sit in a **Pending** state until approved.
+- The list owner/item creator can typically still **see** the item in the normal browser UI (consistent with David seeing the "Mapping" row fine in the SharePoint list view).
+- But **API reads that don't explicitly request draft/pending items** — which is exactly what a plain `GetItems` connector call does, with no special view or query parameters — can silently exclude anything not yet Approved.
+- Critically, this reproduces our exact symptom: **no error, no 403, just a clean `200 OK` with an empty array.** That fits the evidence better than a permissions or connection-reference fault, which would typically surface as an actual error rather than a silent empty result.
+- It's also plausible given *how* the row was created: via a raw HTTP POST (`Send_an_HTTP_request_to_SharePoint`), not the native SharePoint "New item" UI flow. Depending on the list's approval configuration, items created via the REST API can default to a different approval status than items created interactively — worth checking whether that's a contributing factor specifically, not just whether approval is enabled at all.
+
+**Weaker, secondary hypothesis**, worth ruling out at the same time since it's cheap to check: some SharePoint connector implementations respect the list's **default view** filtering even when queried by list ID rather than by name — if the default view has any filter (e.g. "Active items only"), that could also silently exclude rows from a `GetItems` call. Less likely than content approval, but worth a glance at the same time.
+
+### Recommended next steps for this specific issue, in order
+1. **Check List Settings → Versioning settings** for "Require content approval for submitted items." If enabled, check the actual approval status of the "Mapping" row specifically.
+2. If content approval is the cause: approve the item to unblock testing immediately, and separately decide whether content approval makes sense at all for a list that's written to exclusively by an automated flow (it likely doesn't, and disabling it may be the more durable fix).
+3. If content approval is off: check the list's default view for any filter, then move to the connection-reference check below.
+4. Check the `Get_items` action's connection reference specifically — confirm it's using the same, valid, correctly-permissioned SharePoint connection as the other list-interacting actions in the flow.
+5. Consider a diagnostic test of `Get_items` in isolation (e.g. via the scratch-flow pattern established today) pointed at the same list, to see if it reproduces outside Flow B's context.
+6. This is independent of FB-04 and should be treated as its own investigation thread, not conflated with the #1 per-occurrence-pages work.
 
 ---
 
@@ -113,18 +127,19 @@ FB-03's dated title (`Topic.PageTitle`, e.g. `"121 Simon / David - 19 Aug 2026"`
 ## Status at end of session
 
 - **FB-04**: code confirmed correct via Peek Code diff. **Not yet verified by any live run** — today's test never reached that branch. Still blocked on a real end-to-end test.
-- **`Get_items` returning empty**: new, unresolved, root cause unknown. Confirmed NOT a stale GUID or missing columns. This is now the practical blocker preventing any further live testing of the #1 feature set, since the flow can't reach the "existing page" branch at all while mapping rows are invisible to `Get_items`.
+- **`Get_items` returning empty**: new, unresolved. Confirmed NOT a stale GUID or missing columns. **Leading hypothesis: SharePoint content approval on the list** (see above) — not yet tested. This is now the practical blocker preventing any further live testing of the #1 feature set, since the flow can't reach the "existing page" branch at all while mapping rows are invisible to `Get_items`.
 - **New finding (Part 5)**: FB-03's dated title never reaches the actual OneNote page title. This is a real gap that will block FB-04's matching logic from working on newly-created pages too, once `Get_items` is fixed. Recommend scoping as FB-05.
 - No further live changes were made to Flow B or the Topic after FB-04's publish — the remainder of the session was read-only investigation (Peek Code captures, YAML export, SharePoint list settings check).
 - Full current Peek Code (all major containers) and Topic YAML captured this session are preserved in `flow-reference-2026-08-21-full-peek-code-capture.md` for reference — this supersedes the 20 August capture referenced in CURRENT-STATE.md, which was already known stale.
 
 ## Recommended next steps, in order
 
-1. **Investigate the `Get_items` empty-result issue** per Part 4's recommended steps — this is now the hard blocker for any further #1 testing.
-2. **Scope and build FB-05** (dated page title fix) per Part 5 — needed before FB-04 can be meaningfully tested even once `Get_items` is resolved.
-3. Once both are resolved: re-run the full test matrix, this time starting with a **genuinely new occurrence date** (not 19 Aug again) to properly exercise the create-new-dated-page path first, before testing same-date recapture.
-4. Continue to treat the Microsoft support ticket as overdue — today added one large corruption incident on top of an already-strong case.
-5. Update `known-good-values-master-reference.md` with FB-01/FB-02/FB-04's expressions (not yet done).
+1. **Check SharePoint content approval on `RecurringMeetingSectionMap`** (List Settings → Versioning settings) — leading hypothesis for the `Get_items` empty-result issue; cheapest, most likely check, do this first.
+2. If not content approval, work through the remaining `Get_items` diagnostic steps in Part 4.
+3. **Scope and build FB-05** (dated page title fix) per Part 5 — needed before FB-04 can be meaningfully tested even once `Get_items` is resolved.
+4. Once both are resolved: re-run the full test matrix, this time starting with a **genuinely new occurrence date** (not 19 Aug again) to properly exercise the create-new-dated-page path first, before testing same-date recapture.
+5. Continue to treat the Microsoft support ticket as overdue — today added one large corruption incident on top of an already-strong case.
+6. Update `known-good-values-master-reference.md` with FB-01/FB-02/FB-04's expressions (not yet done).
 
 ---
 *Written 21 August 2026, end of session, for continuity into the next session. If anything here conflicts with `CURRENT-STATE.md`, trust the most recent update to that file over this note.*
