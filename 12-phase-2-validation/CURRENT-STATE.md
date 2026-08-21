@@ -1,14 +1,13 @@
 # CURRENT STATE — Teams-OneNote Meeting Capture (start here)
 
-**Last updated:** 16 August 2026, end of session
-**⚠️ See also:** significant new work happened 20 August 2026 not yet folded into this summary — read `handover-2026-08-20-bug8-resolved-corruption-rootcause.md`, `handover-2026-08-20-incident7-corruption-recovery-published.md`, `design-amendment-2026-08-20-per-occurrence-recurring-pages.md`, `bug-2026-08-20-update-fragment-discards-new-content.md`, and `bug-2026-08-20-fa16-int-crash-date-leak.md` before relying on the summary below. For the current full flow structure, use `flow-reference-2026-08-20-full-peek-code-capture.md` (supersedes the 15 August one).
+**Last updated:** 21 August 2026, morning session
 **Purpose:** this is the single page to read before anything else in this folder. Everything below is the current, verified truth about the flow. For full investigation detail on any item, follow the linked handover.
 
 ---
 
 ## TL;DR
 
-The flow works for the common case. Two real bugs were closed this week (Bug 9, missing page titles). Two things remain genuinely open (a rare edge-case fix and an intermittent timing issue), and a significant platform-behaviour finding (Express mode instability) needs to go to Microsoft. Nothing is currently broken — Flow Checker is clean and the flow is published.
+Three field-reported issues (per-occurrence recurring pages, recapture content loss, date entry format) were investigated 20–21 August. **Two are now fixed and confirmed live: date handling (#3) and recapture content loss (#2).** The third (#1, per-occurrence recurring pages) has a complete, evidence-backed design and is ready to build — its dependency on #2 being fixed first is now satisfied. Flow Checker is clean and the flow is published.
 
 ---
 
@@ -16,9 +15,11 @@ The flow works for the common case. Two real bugs were closed this week (Bug 9, 
 
 | Item | Status | Evidence |
 |---|---|---|
-| Existing-page recapture (Bug 9) | **Closed**, workaround in place | `handover-2026-08-16-bug9-closed-workaround-confirmed.md` |
-| New page titles — recurring meetings | **Fixed and confirmed** | `handover-2026-08-16-page-title-fix-recurring-confirmed.md` |
-| New page titles — ordinary one-off first captures | **Already covered** by the recurring-branch fix above (both paths share `Create_OneNote_Page` for first-time captures) | `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md` |
+| **Date entry — loose formats + slash dates (#3)** | **Fixed and confirmed live, 20 Aug** | `fix-2026-08-20-3-datehandling-resolved.md` |
+| **Recapture content loss (#2)** | **Fixed and confirmed live, 21 Aug** | `fix-2026-08-21-2-appendcontent-resolved.md` |
+| Existing-page recapture (Bug 9) | Closed, workaround in place — **note: this workaround is now the hard blocker for #1, see below** | `handover-2026-08-16-bug9-closed-workaround-confirmed.md` |
+| New page titles — recurring meetings | Fixed and confirmed | `handover-2026-08-16-page-title-fix-recurring-confirmed.md` |
+| New page titles — ordinary one-off first captures | Already covered by the recurring-branch fix above | `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md` |
 | UJ1–UJ5 (core user journeys) | Confirmed as of 20 July; not re-verified since | `uj1`–`uj5-validation-record.md` |
 | Bug 7 (recurring second-capture) | Fixed, confirmed | `handover-2026-08-08-bug7-recurring-second-capture-sectionid-mismatch.md` |
 | GitHub MCP write access | Working reliably | see `AMEND` log / June handovers |
@@ -27,33 +28,34 @@ The flow works for the common case. Two real bugs were closed this week (Bug 9, 
 
 | Item | Priority | Notes |
 |---|---|---|
-| Recurring title-set intermittent `404` race | Medium | `Set_PageTitle_Recurring` occasionally fails even against a freshly-verified page ID. Delay-based fix attempted and abandoned (see Express mode issue below). **Recommended next approach: `Do until` retry/poll instead of a Delay action.** `handover-2026-08-16-page-title-fix-recurring-confirmed.md` |
-| One-off branch title fix (`Create_Page_OneOff`) | Low | Built, Flow Checker clean, published — but genuinely unconfirmed. Only reachable via a rare stale-mapping edge case, not ordinary captures. `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md` |
-| Bug 9 workaround → real fix | Medium | Currently takes "the section's first page" as a stopgap. Will break once a section legitimately holds 2+ pages. Should be reverted to genuine title-matching once titles are trustworthy everywhere (needs the one-off fix confirmed first). **20 Aug: confirmed still a hard blocker for the per-occurrence-pages design amendment — see `design-amendment-2026-08-20-per-occurrence-recurring-pages.md`.** |
-| Tail-section anomaly | Low-Medium | `Compose SP Item Count` → `Respond to the agent` showed "Not specified"/unreached status in one run this session, cause not diagnosed. Not reproduced or ruled in/out on a clean retest. |
-| Notebook / SharePoint test-data cleanup | Low | Mostly done 16 August; ongoing housekeeping. `2026-08-16-test-data-cleanup-note.md` |
-| **NEW 20 Aug: Update fragment discards new content on recapture** | **High** | `Compose_UpdateHtmlFragment` is a hardcoded string that never includes the fresh `text_3` content — organiser updates are silently discarded on both one-off and recurring recapture. `bug-2026-08-20-update-fragment-discards-new-content.md` |
-| **NEW 20 Aug: FA16 crashes on date text (Flow A)** | **Medium** | `FA16_Compose_SelectedIndex` has no exclusion for date-like text (unlike `FA15`), causing an `int()` crash when a typed date leaks past the Topic's `C6C_Check_Date` interception. Root cause of the leak itself still open. `bug-2026-08-20-fa16-int-crash-date-leak.md` |
-| **NEW 20 Aug: Per-occurrence recurring pages** | Design only, not built | Recurring captures currently update one page per series; David wants one page per occurrence (dated), with same-date recaptures appending. `design-amendment-2026-08-20-per-occurrence-recurring-pages.md` |
+| **Per-occurrence recurring pages (#1)** | **Ready to build** | Design complete and evidence-backed. `design-amendment-2026-08-20-per-occurrence-recurring-pages.md`. Its dependency on #2 (content loss) is now satisfied — build can proceed. Requires replacing the Bug 9 "first page in section" workaround with genuine date-based matching (see row above). |
+| FA16 defensive guard (Flow A) | Low | Belt-and-braces only — the Topic-side #3 fix already prevents date text reaching Flow A. Digit-strip guard expression ready in `fix-2026-08-20-3-datehandling-resolved.md`, not yet built. |
+| Recurring title-set intermittent `404` race | Medium | `Set_PageTitle_Recurring` occasionally fails even against a freshly-verified page ID. **Recommended approach: `Do until` retry/poll instead of a Delay action.** `handover-2026-08-16-page-title-fix-recurring-confirmed.md` |
+| One-off branch title fix (`Create_Page_OneOff`) | Low | Built, Flow Checker clean, published — genuinely unconfirmed. Rare edge case only. `handover-2026-08-16-oneoff-title-fix-built-unconfirmed.md` |
+| Tail-section anomaly | Low-Medium | One unreproduced anomaly from a prior session, not diagnosed. |
+| Notebook / SharePoint test-data cleanup | Low | Ongoing housekeeping. `2026-08-16-test-data-cleanup-note.md` |
+| Topic YAML re-export to repo | Low (housekeeping) | The live Topic now has the #3 fix (C6C slash+text parsing, C6D number-selection, else re-prompt) but the committed `topic-export-2026-07-31.yaml` predates it. Re-export and commit next time convenient. |
+| Link-format bug (`PageSelfUrl` vs `oneNoteWebUrl`) | Medium | Still present as of 21 Aug testing — clicking some returned page links gives `C40001` auth error. Logged since 6/8 Aug, not yet fixed. |
 
 ## Known platform issues (not flow bugs — flag to Microsoft)
 
-1. **Mass value-blanking corruption** — a recurring pattern all week where ~26 `SetVariable` actions lose their `value` field simultaneously. Multiple trigger types now confirmed: Designer canvas edits, publish events, and (new 16 August) **flow-level settings changes**. **20 Aug: 7th instance logged (Incident 7); also found to have masqueraded as a distinct logic bug (Bug 8) — see `handover-2026-08-20-bug8-resolved-corruption-rootcause.md`.**
-2. **Express mode will not stay off** — toggled off and saved explicitly, twice, and reverted to Enabled on its own both times, each time triggering the 26-action corruption above. This is the most operationally serious finding of the week — not mitigated by careful editing discipline, since no Designer edit was involved. See `handover-2026-08-16-session-close-express-mode-unstable.md`.
-3. Various smaller quirks (publish-only validation gaps, self-resolving missing fields, BadGateway masking real success) — see `MICROSOFT-SUPPORT-TICKET-DRAFT-2026-08-15.md` for the full catalogue.
+1. **Mass value-blanking corruption** — a recurring pattern where ~26 `SetVariable` actions lose their `value` field simultaneously. Multiple trigger types confirmed: Designer canvas edits, publish events, flow-level settings changes. 7 incidents logged as of 20 August; one instance (Bug 8) was found to have masqueraded as a distinct logic bug — see `handover-2026-08-20-bug8-resolved-corruption-rootcause.md`.
+2. **Express mode will not stay off** — toggled off and saved explicitly, twice, and reverted to Enabled on its own both times, each time triggering the corruption above. See `handover-2026-08-16-session-close-express-mode-unstable.md`.
+3. Various smaller quirks — see `MICROSOFT-SUPPORT-TICKET-DRAFT-2026-08-15.md` for the full catalogue.
 
-**The Microsoft ticket is drafted but not yet submitted.** Fold in both the 16 August Express-mode findings and the 20 August "corruption masquerading as a logic bug" finding (Bug 8) before submitting — flagged as a strong new business-impact point.
+**The Microsoft ticket is drafted but not yet submitted.** Fold in the Express-mode findings and the "corruption masquerading as a logic bug" finding (Bug 8) before submitting.
 
 ## Where to look for detail
 
-- **`amendment-log.md`** — formal, numbered list of every confirmed fix, in order. Best single source for "what changed and why."
-- **`flow-reference-2026-08-20-full-peek-code-capture.md`** — current full Peek Code snapshot (captured via the faster container-level method). Use this over the 15 August version.
-- **Dated `handover-*.md` files** — full investigation narrative for anything above. Filenames describe their content; most recent (20 August) are the most relevant for current work.
-- **`living-audit.md` / `living-audit-topic.md`** — older running audit docs; per earlier notes, entries from before ~25 June may be stale and should be re-verified rather than trusted outright.
+- **`amendment-log.md`** — formal, numbered list of every confirmed fix, in order.
+- **`known-good-values-master-reference.md`** — restore-focused reference of every SetVariable/Compose expression in Flow B, for fast recovery after a corruption incident. Note: does not yet reflect the #2 fix's new `Compose_UpdateHtmlFragment` expression — update this alongside next session.
+- **`flow-reference-2026-08-20-full-peek-code-capture.md`** — full Peek Code snapshot of Flow B as of 20 August (pre-#2 fix; the `Compose_UpdateHtmlFragment` entry is now stale, everything else current).
+- **Dated `handover-*.md` and `fix-*.md` files** — full investigation narrative for anything above. Most recent (20–21 August) are most relevant for current work.
+- **`living-audit.md` / `living-audit-topic.md`** — older running audit docs; entries from before ~25 June may be stale.
 
 ## Before your presentation
 
-Suggested framing: two real bugs found and closed this week (with evidence), one significant platform-reliability finding ready to escalate to Microsoft, and a clear, prioritised list of what's left — nothing currently broken. The repo has full documentation and an established recovery process that's already proven itself twice.
+Suggested framing: three field-reported issues investigated with an evidence-first approach (throwaway diagnostics before any live change); two fully fixed and confirmed live within 24 hours; the third has a complete, ready-to-build design. Two real platform bugs closed this week, one significant platform-reliability finding ready to escalate to Microsoft. The repo has full documentation and an established recovery process proven multiple times.
 
 ---
 
