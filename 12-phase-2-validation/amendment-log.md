@@ -84,11 +84,101 @@ Pattern 6 (`SetVariable` actions missing their `value` key entirely) has recurre
 
 ---
 
-## Pending — to be logged once built
+## AMEND-2026-08-20-001 — Issue #3: Date entry format sensitivity
 
-- **`OutStatus` differentiation build** (`2026-07-27-flow-b-outstatus-trace.md`) — still an outstanding item per the 20 July gap-analysis doc. Not yet built.
-- **Recurring-branch title-set race condition fix** (retry/poll approach, replacing the abandoned Delay-based mitigation) — see AMEND-2026-08-16-003's "known follow-up issue."
-- **One-off branch title fix live confirmation** — see AMEND-2026-08-16-004; needs a deliberately-constructed stale-mapping test.
+**Flow:** Topic (`C6C_Check_Date`)
+**Defect:** date entry only accepted `d MMM` format (e.g. `23 Oct`). Slash-format dates (`dd/MM/yy`, `dd/MM/yyyy`) and other common formats were not recognised, causing the agent to fall through to the unrecognised-input handler rather than navigating to the entered date.
+**Fix applied:** `C6C_Check_Date` condition extended to also match slash-format dates via `IsMatch(Topic.TopicSelectedNumber, "^\d{1,2}/\d{1,2}/\d{2,4}$")`; `C6C_Check_Date` action updated with a full slash-aware date parser using `Date()` with `Split()` to extract day/month/year components, handling both 2-digit and 4-digit years.
+**Regression caught and fixed same session:** the new `else` branch intercepted plain number selection (e.g. typing `3` to select meeting 3), routing it to the unrecognised-input handler instead of the selection path. Fixed by adding explicit `C6D_Check_Number` condition (`=!IsError(Value(Topic.TopicSelectedNumber))`) before the else, with a no-op `SetVariable` to satisfy the condition requirement.
+**Live-verified:** confirmed via live test. Plain number selection confirmed still working (regression check passed).
+**Full trace:** `session-2026-08-20-issue3-datehandling.md`, `fix-2026-08-20-3-datehandling-resolved.md`.
+
+## AMEND-2026-08-21-001 — Issue #2: Recapture discards organiser's updated content
+
+**Flow:** Flow B, `Compose_UpdateHtmlFragment`
+**Defect:** on recapture (existing page found), the update fragment that gets appended to the page only included the static "Automated update" header block and discarded the organiser's updated meeting body content (`text_3`). Human-entered notes in the page were preserved (correct), but the refreshed meeting details from the organiser were lost.
+**Fix applied:** `Compose_UpdateHtmlFragment` inputs changed from a static string to `concat(notice, triggerBody()?['text_3'])`, appending the full current meeting body after the static header block.
+**Live-verified:** confirmed via live test — recapture now appends both the header and the refreshed meeting content while preserving existing human notes.
+**Full trace:** `session-2026-08-21-fb-progress-and-incidents.md`.
+
+## AMEND-2026-08-21-002 — Issue #1 foundation: OccurrenceDate field flowing end-to-end (FB-01/FB-02)
+
+**Flow:** Flow B (trigger schema + `Filter_Existing_Mapping`)
+**Defect:** recurring meeting captures had no way to distinguish between different occurrence dates of the same series — the mapping table matched only on `SeriesMasterId`, meaning all occurrences of a series would resolve to the same existing page regardless of date.
+**Fix applied (FB-01):** `Filter_Existing_Mapping` updated to match on both `SeriesMasterId` AND `OccurrenceDate` (`text_5`). `text_5` added to the Flow B trigger schema as `OccurrenceDate` (optional string field).
+**Fix applied (FB-02):** `Send_an_HTTP_request_to_SharePoint` (mapping row write) updated to include `OccurrenceDate` in the JSON body.
+**Fix applied (FB-03):** `C9B_Set_PageTitle` in the Topic updated to produce `Concatenate(Topic.MeetingTitle, " - ", Text(DateValue(Topic.DateContext), "d MMM yyyy"))` — uniform dated title format.
+**Live-verified:** `OccurrenceDate`/`text_5` field confirmed flowing end-to-end.
+**Full trace:** `session-2026-08-21-fb-progress-and-incidents.md`, `session-2026-08-21-fb04-build-and-getitems-mystery.md`.
+
+---
+
+## AMEND-2026-08-22-001 — Issue #1 completion: Date-based page matching (FB-04)
+
+**Flow:** Flow B, `Filter_Pages_By_Title` + `Compose_RealExistingPageId`
+**Defect:** Bug 9 workaround (`Compose_RealExistingPageId` blindly grabbing the first page in the section) meant that recapturing any recurring occurrence would always update the *first* page in the section regardless of date, rather than the correct occurrence-specific page.
+**Fix applied (FB-04a):** `Filter_Pages_By_Title` `where` clause changed from `@equals(item()?['title'], outputs('Compose_MeetingTitleForPageMatch'))` to `@contains(item()?['title'], formatDateTime(triggerBody()?['text_5'], 'd MMM yyyy'))` — date-based matching.
+**Fix applied (FB-04b):** `Compose_RealExistingPageId` changed from `first(outputs('Get_Pages_In_Section_Existing_Branch')...)` to `@if(greater(length(body('Filter_Pages_By_Title')), 0), first(body('Filter_Pages_By_Title'))?['id'], '')` — now consumes the filter's output.
+**Fix applied (FB-05):** `Compose_SafePageTitle` and `Compose_SafePageTitle_OneOff` updated to append ` - [formatted date]` when `text_5` is present, so newly created pages have dated titles that FB-04's filter can match against.
+**Live-verified:** full create → recapture cycle confirmed on 121 Simon/David series (16 Sep 2026 occurrence) and STDA series (30 Sep + 15 Oct 2026). Multiple occurrences confirmed creating separate dated pages under the same section. Recapture correctly identified existing page by date and appended update fragment without creating duplicate. Issue #1 fully closed.
+**Full trace:** `session-2026-08-22-backlog-reduction-and-fb04-confirmed.md`, `session-2026-08-22-afternoon-addendum.md`.
+
+## AMEND-2026-08-22-002 — `OutStatus` hardcoded to `"OK"` — differentiated to 6 values
+
+**Flow:** Flow B, `Set_varOutStatus` + Topic `C11_Check_OutStatus`
+**Defect:** `Set_varOutStatus` unconditionally set `"OK"` regardless of what actually happened — the agent always reported success even on partial failures or errors.
+**Fix applied:** four new structural Compose actions added to capture mapping-write success/failure and section-match counts. `Set_varOutStatus` replaced with a six-value expression:
+- `SUCCESS` — page action succeeded and mapping write confirmed (status 201)
+- `PARTIAL_SUCCESS` — page action succeeded but mapping write failed
+- `RECURRING_SETUP_REQUIRED` — recurring meeting but section resolution failed
+- `SETUP_SECTION_NOT_FOUND` — no section URL resolved
+- `SETUP_SECTION_AMBIGUOUS` — multiple sections matched
+- `ERROR` — catch-all
+**Companion change:** Topic `C11_Check_OutStatus` updated from `=Topic.OutStatus = "OK"` to `=Topic.OutStatus = "SUCCESS"`.
+**Live-verified:** capture test immediately after publish confirmed `OutStatus = "SUCCESS"` and agent success message returned correctly.
+**Full trace:** `session-2026-08-22-outstatus-differentiation.md`.
+
+## AMEND-2026-08-22-003 — BadGateway on mapping row write — native connector replacement
+
+**Flow:** Flow B, `Send_an_HTTP_request_to_SharePoint` (recurring) and `OF09a_—_Send_an_HTTP_request_to_SharePoint_(OneOff)` (one-off)
+**Defect:** raw HTTP REST POST to SharePoint intermittently returned `502 BadGateway` after exhausting all retries, leaving the mapping row unwritten and causing subsequent recaptures to create duplicate pages.
+**Fix applied:** both raw HTTP POST actions replaced with native SharePoint `Create item` connector actions (`PostItem` operation) — `Create_Mapping_Item_Recurring` and `Create_Mapping_Item_OneOff`. Native connector handles throttling and retries more gracefully. `Compose_MappingWriteSucceeded` and `Compose_MappingWriteSucceeded_OneOff` updated to reference new action names and check for status `201` (native connector returns 201, not 200). `HTTP_Update_SP_PageSelfUrl` and `OF09b_—_HTTP_Update_SP_PageSelfUrl_(OneOff)` URI references updated to use new action names for the new row's ID.
+**Live-verified:** capture of "New Repeat Meeting" series confirmed mapping row written cleanly in 0.3s with green tick, no retries, `OutStatus = "SUCCESS"`, clickable OneNote link returned by agent.
+**Full trace:** `session-2026-08-22-fa16-and-badgateway-fix.md`, `session-2026-08-22-badgateway-verification.md`.
+
+## AMEND-2026-08-22-004 — FA43 coalescing gap: `IsRecurring` and `SeriesMasterId` always empty on multi-match path
+
+**Flow:** Flow A (`PA - Resolve Meeting Selection`), `FA43_Respond_to_agent` response action
+**Defect:** `isrecurring` and `seriesmasterid` fields in the response body were wired only to `FA19B_Compose_OutIsRecurring_Resolved` and `FA19C_Compose_OutSeriesMasterId_Resolved` respectively — the Resolved path only. All other response fields used `coalesce()` across multiple paths. Consequence: when a user selected a meeting from a multi-match candidate list, both fields were always returned empty, causing the Topic to incorrectly treat the selected meeting as a non-recurring one-off.
+**Fix applied:** both fields updated to use `coalesce()` across all three paths:
+```
+isrecurring: coalesce(FA19B_Resolved, FA28A_Single, FA43A_Multi, '')
+seriesmasterid: coalesce(FA19C_Resolved, FA28B_Single, FA43B_Multi, '')
+```
+**Live-verified:** FA16 defensive guard verification test (selecting meeting `2` from a 4-item candidate list) confirmed correct meeting identified and captured. FA43A/FA43B correctly remain empty on the initial multi-match response (no selection made yet); coalesce fallback ensures correct values on selection resolution.
+**Full trace:** `session-2026-08-22-fa43-and-endofday.md`.
+
+## AMEND-2026-08-22-005 — Section name sanitiser character gap
+
+**Flow:** Flow B, `Compose_SafeSectionName`, `Compose_SafeSectionName_ExistingBranch`, `FB-F01_—_Compose_Input_MeetingTitle_(one-off)`
+**Defect:** all three section-name sanitiser expressions were missing five characters from their `replace()` chain: `|`, `#`, `'`, `%`, `~`. These are invalid in OneNote section names and would cause `CreateSectionInNotebook` to fail with a BadRequest if any appeared in a meeting title.
+**Fix applied:** five additional `replace()` pairs added to all three actions in both the `substring()` and `length()` halves of each expression. `\` (backslash) intentionally excluded — not a realistic character in Outlook meeting titles and caused Designer parser issues.
+**Full trace:** `session-2026-08-22-backlog-reduction-and-fb04-confirmed.md`.
+
+## AMEND-2026-08-22-006 — Link-format bug: `PageSelfUrl` returned instead of `oneNoteWebUrl`
+
+**Flow:** Flow B, `Set_varOutputPageLink_Existing`
+**Defect:** on the existing-page recapture path, `varOutputPageLink` was set to `varFinalExistingPageSelfUrl` (a REST API endpoint URL) rather than the clickable OneNote web URL, causing `C40001` authentication errors when users tried to open the returned link.
+**Fix applied:** `Set_varOutputPageLink_Existing` value changed to `@first(body('Filter_Existing_Mapping'))?['PageWebUrl']`, reading the clickable web URL from the mapping row.
+**Full trace:** `session-2026-08-22-backlog-reduction-and-fb04-confirmed.md`.
+
+## AMEND-2026-08-22-007 — FA16 defensive guard
+
+**Flow:** Flow A, `FA16_Compose_SelectedIndex`
+**Defect:** if `varInSelectedNumber` contained a non-numeric string that bypassed the Topic's upstream `C6D_Check_Number` routing, `int()` would throw a runtime error rather than failing gracefully.
+**Fix applied:** expression updated to add a round-trip guard: `not(equals(string(mul(int(if(equals(trim(...), ''), '1', trim(...))), 1)), trim(...)))` — if the value can't survive int→mul→string round-trip, falls back to `0`. Inner `'1'` fallback ensures `int()` always has a valid numeric string, avoiding eager-evaluation throws.
+**Live-verified:** selecting meeting `2` from a 4-item candidate list confirmed correct, guard did not interfere with normal numeric selection.
+**Full trace:** `session-2026-08-22-fa16-and-badgateway-fix.md`.
 
 ---
 
