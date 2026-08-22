@@ -49,7 +49,6 @@
 | **Microsoft support ticket** | **Overdue** | Still not submitted. 10+ corruption incidents. |
 | Amendment log backfill | Low | Never been used. |
 | `known-good-values-master-reference.md` update | Low | Needs all today's changes added. |
-| Orphaned test pages in OneNote | Housekeeping | A few stale pages from testing. |
 
 ## Recommended next session (Sonnet 4.6, Standard effort)
 
