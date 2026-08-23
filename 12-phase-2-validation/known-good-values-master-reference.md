@@ -6,7 +6,7 @@ The recurring platform-level corruption pattern (11+ incidents as of 23 August) 
 
 **This document covers Flow B** (`PA - Resolve OneNote Meeting Section - v2 Clean Build`). Keep it current: update whenever an expression changes, before moving on.
 
-**Last verified against live flow:** 23 August 2026 (session — 21-action corruption incident, recovered and republished; `Set_varOutStatus` expression corrected, see note below).
+**Last verified against live flow:** 23 August 2026 (session — 21-action corruption incident recovered and republished; `Set_varOutStatus` expression corrected; BUG-01 resolved and validated end-to-end).
 
 ---
 
@@ -167,17 +167,23 @@ False branch: empty — flow continues with blank vars, `OutStatus` = `SETUP_SEC
 
 ---
 
-## Known open issue — Condition_Should_Write_Mapping has no existing-mapping guard
+## ✅ BUG-01 RESOLVED — 23 Aug 2026 (second-occurrence overwrite/collision)
 
-`Condition_Should_Write_Mapping` (inside the `Condition_Mapping_Exists` else/CREATE_REQUIRED branch) currently gates purely on:
-```
-@equals(toLower(string(triggerBody()?['text'])), 'true')
-```
-i.e. "is this a recurring meeting" — it does **not** check whether a mapping row already exists. This was the root cause of the 23 Aug BadRequest/duplicate-SeriesMasterId incident (see `session-2026-08-23-...` notes). It only manifested because `varFinalMatchCount_1` etc. were also corrupted at the same time, causing `Condition_Mapping_Exists` to incorrectly route into the CREATE_REQUIRED branch for an already-mapped series. With `varFinalMatchCount_1`/`varFinalPageDecision_1`/`varFinalExistingPageSelfUrl_1` now fixed, `Condition_Mapping_Exists` should correctly route to the True (existing) branch first, avoiding this path — but `Condition_Should_Write_Mapping` itself remains structurally unguarded and could still double-write if reached with an existing mapping in some other edge case. Consider adding a `Compose_Match_Count`-based guard here as defense in depth. Not yet built.
+**Symptom:** capturing a second occurrence of a recurring series either overwrote the first page's mapping or failed outright with a duplicate-value error.
 
-## Known data-integrity issue — orphaned/skeleton mapping rows
+**Root cause (confirmed, three contributing factors, all now fixed):**
 
-Rows in `RecurringMeetingSectionMap` can end up with `Title`/`SeriesMasterId`/`MeetingTitle`/`Status`/`OccurrenceDate` populated but `SectionPagesUrl` (and other Section/Page fields) blank, if an earlier run failed after creating the mapping row but before completing the OneNote page/section creation. When `Filter_Existing_Mapping` matches such a row, `Set_varTargetSectionPagesUrl_ExistingMapping` pulls a blank `SectionPagesUrl`, and `Create_OneNote_Page` then fails with "The section id given in the input is invalid." This is the scenario UJ3b (automatic stale-row cleanup) is designed to address — not yet built. Until built, orphaned rows must be manually deleted from the SharePoint list before retesting the affected series.
+1. **`varFinalMatchCount_1`/`varFinalPageDecision_1`/`varFinalExistingPageSelfUrl_1` corruption** — these were blanked by the platform corruption pattern, causing `Condition_Mapping_Exists` to always evaluate as "no existing mapping" regardless of what `Filter_Existing_Mapping` actually found. Fixed by restoring the three expressions above (23 Aug).
+2. **`Set_varOutStatus` paren-balance typo** — blocked publishing entirely after the above fix; corrected (23 Aug, see Correction log above).
+3. **Root structural cause: the `SeriesMasterId` column on `RecurringMeetingSectionMap` had "Enforce unique values" = Yes.** This SharePoint list-level constraint meant *any* second row for the same series — regardless of `OccurrenceDate` — would be rejected by SharePoint with a `duplicate values were found in the following field(s): [SeriesMasterId]` error, even once the flow's own logic (which correctly keys uniqueness on `SeriesMasterId` + `OccurrenceDate` together via `Filter_Existing_Mapping`) was working correctly. **Fixed by setting Enforce unique values → No** on the `SeriesMasterId` column (List settings → Columns → SeriesMasterId → Edit column). The flow's own `Filter_Existing_Mapping` where-clause already prevents true duplicate rows at the logic layer, so removing the column constraint is safe.
+
+**Validated 23 Aug:** clean list + clean OneNote section, captured occurrence 1 (24 Aug) → 1 SharePoint row, 1 OneNote page. Captured occurrence 2 (31 Aug, same series) → 2nd SharePoint row created successfully (distinct `OccurrenceDate`), 2nd OneNote page created successfully, neither overwrote the other. Confirmed via SharePoint list view and OneNote page inspection.
+
+**`Condition_Should_Write_Mapping` residual note:** this condition still gates purely on `@equals(toLower(string(triggerBody()?['text'])), 'true')` (i.e. "is this recurring") with no explicit match-count guard. With the three items above fixed, `Condition_Mapping_Exists` now correctly routes existing mappings away from this branch before it's ever reached, so it's no longer believed to be reachable with a live duplicate in the tested scenarios. Retained as a defense-in-depth candidate for a future session, not urgent.
+
+## ✅ Data-integrity issue — orphaned/skeleton mapping rows — mitigated, UJ3b still open
+
+Rows in `RecurringMeetingSectionMap` can end up with `Title`/`SeriesMasterId`/`MeetingTitle`/`Status`/`OccurrenceDate` populated but `SectionPagesUrl` (and other Section/Page fields) blank, if an earlier run failed after creating the mapping row but before completing the OneNote page/section creation. When `Filter_Existing_Mapping` matches such a row, `Set_varTargetSectionPagesUrl_ExistingMapping` pulls a blank `SectionPagesUrl`, and `Create_OneNote_Page` then fails with "The section id given in the input is invalid." One such orphaned row (ID 279) was found and manually deleted on 23 Aug as part of BUG-01 diagnosis. **UJ3b (automatic stale-row cleanup) remains not built** — until built, orphaned rows must be manually deleted from the SharePoint list before retesting an affected series.
 
 ---
 
