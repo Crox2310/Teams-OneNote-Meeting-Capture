@@ -154,6 +154,85 @@ Formal, numbered record of confirmed defects found and fixed in the Teams → On
 
 ---
 
+## AMEND-2026-08-23-001 — Flow A: `FA33A`/`FA34A` corruption (first-ever Flow A incident)
+
+**Flow:** Flow A
+**Defect:** `FA33A_Set_varCandidateListText_Empty` and `FA34A_Set_varCandidateIndex_One` both had blanked `value` fields — first confirmed corruption incident on Flow A (previously only Flow B and Email Triage had been affected).
+**Fix:** `FA33A` → `@string('')`, `FA34A` → `1`.
+**Live-verified:** confirmed, Flow Checker clean, published.
+**Full trace:** `session-2026-08-23-bug01-investigation-and-resolution.md`.
+
+## AMEND-2026-08-23-002 — BUG-01: `varFinal*` corruption causing second-occurrence overwrite
+
+**Flow:** Flow B
+**Defect:** `varFinalExistingPageSelfUrl_1`, `varFinalPageDecision_1`, `varFinalMatchCount_1` all had blanked `value` fields. With `varFinalMatchCount` always empty, `Condition_Mapping_Exists`'s guard always evaluated false regardless of what `Filter_Existing_Mapping` actually found — routing every capture to the CREATE_REQUIRED branch even when a mapping already existed. Root cause of the originally reported BUG-01 (second occurrence of a recurring series overwriting the first).
+**Fix:** restored all three to documented known-good values (`@outputs('Compose_ExistingPageSelfUrl')`, `@outputs('Compose_PageDecision')`, `@string(outputs('Compose_Match_Count'))`).
+**Live-verified:** confirmed end-to-end with two sequential occurrence captures, each producing its own SharePoint row and OneNote page.
+**Full trace:** `session-2026-08-23-bug01-investigation-and-resolution.md`.
+
+## AMEND-2026-08-23-003 — Flow B: 21-action corruption incident
+
+**Flow:** Flow B
+**Defect:** 21 actions found with blanked `value` fields at session start, surfaced immediately after AMEND-002's fix.
+**Fix:** all 21 restored from `known-good-values-master-reference.md`, in Flow Checker's listed order.
+**Full trace:** `session-2026-08-23-bug01-investigation-and-resolution.md`.
+
+## AMEND-2026-08-23-004 — `Set_varOutStatus` paren-balance typo in reference doc
+
+**Flow:** Flow B (and the reference doc itself)
+**Defect:** the seven-value `Set_varOutStatus` expression as recorded in `known-good-values-master-reference.md` had one extra trailing closing parenthesis (47 close vs 46 open), causing a `TemplateValidationError` when pasted verbatim during AMEND-003's recovery.
+**Fix:** corrected expression (46/46 balanced) applied to the flow and to the reference doc, with a correction note added to prevent the error recurring from an old copy.
+**Full trace:** `session-2026-08-23-bug01-investigation-and-resolution.md`.
+
+## AMEND-2026-08-23-005 — Root cause: `SeriesMasterId` SharePoint unique-constraint
+
+**List:** `RecurringMeetingSectionMap` (SharePoint)
+**Defect:** the `SeriesMasterId` column had "Enforce unique values" set to Yes — a list-level constraint that blocked any second mapping row for the same recurring series regardless of `OccurrenceDate`, independent of and unfixable via flow logic. This was the true structural root cause underlying BUG-01, on top of AMEND-002's corruption fix.
+**Fix:** "Enforce unique values" set to No. Uniqueness for "one row per occurrence" remains correctly enforced at the logic layer by `Filter_Existing_Mapping`'s combined `SeriesMasterId` + `OccurrenceDate` match.
+**Live-verified:** confirmed via a clean two-occurrence capture test producing two separate, correctly populated rows.
+**Full trace:** `session-2026-08-23-bug01-investigation-and-resolution.md`.
+
+## AMEND-2026-08-23-006 — FR-03: OneNote link shortening via hyperlink
+
+**Flow:** Topic
+**Fix:** `C12_Success` message changed from displaying the raw `oneNoteWebUrl` (~250+ chars) to a markdown hyperlink `[Open in OneNote]({Topic.OutCreatedPageLink})`. Investigated and ruled out swapping the underlying URL field first — live evidence showed none of Microsoft's three OneNote API URL variants (`oneNoteWebUrl`, `oneNoteClientUrl`, `oneNoteEmbedUrl`) were meaningfully shorter, and `oneNoteClientUrl` uses a non-`https://` scheme with reliability risk.
+**Live-verified:** confirmed, Teams renders a clickable "Open in OneNote" link.
+**Full trace:** `session-2026-08-23-part2-fr03-fr02-bug02.md`.
+
+## AMEND-2026-08-23-007 — FR-02: Holiday/leave/period/admin-block candidate list filter
+
+**Flow:** Flow A
+**Fix:** new Filter array action `FA09B_Filter_ExcludeLeaveAndPeriodEntries` inserted after `FA09_RAW_CandidateArray_DoNotUseDownstream`, excluding 11 patterns (holiday, leave, A/L, on leave, OOO/out of office, bank holiday, Smarter Working, `P<n> W<n> (Week <n>)` period reminders, Manage Email & Teams, Quiet Hour). Six downstream consumers (`FA11`, `FA13`, `FA28`, `FA19`, `FA35`) repointed from `FA09` to `FA09B`, with `FA09` itself left untouched to protect existing wiring.
+**Bugs found and fixed during build (see full trace for detail):** a regex over-escaping issue caused by Designer paste round-tripping; `isMatch()` is not a valid WDL function (Power Fx only) — rebuilt as a compound `startsWith`/`contains` check; a field-swap slip during the six-action repoint (`FA11` and `FA13`'s intended expressions were initially swapped).
+**Live-verified:** confirmed on a real multi-entry day — all filtered patterns correctly excluded, genuine meetings correctly retained and numbered.
+**Full trace:** `session-2026-08-23-part2-fr03-fr02-bug02.md`.
+
+## AMEND-2026-08-23-008 — BUG-02: Zero-match day had no P/N/date navigation
+
+**Flow:** Topic
+**Defect:** `C4_Check_MatchCount`'s true (zero-match) branch only sent a message instructing the user to type P/N/date — no `Question` node captured the reply, so typing "N" on a zero-match day fell through to generic intent-recognition failure. Pre-existing gap, surfaced for the first time by FR-02 creating the first genuinely zero-match test day.
+**Fix:** added `question_C4B_AskNav` and `conditionGroup_C4C_Nav`, mirroring the proven P/N/date/Cancel pattern from the has-matches branch, routing back to `C2_Call_FlowA_Initial`.
+**Live-verified:** confirmed — "N" on a zero-match day now correctly re-searches the next day.
+**Full trace:** `session-2026-08-23-part2-fr03-fr02-bug02.md`.
+
+## AMEND-2026-08-23-009 — Personal admin-block patterns added to FR-02 filter
+
+**Flow:** Flow A
+**Fix:** `FA09B`'s where-clause extended with two further patterns: `manage email & teams`, `quiet hour` — same treatment as the original 9 FR-02 patterns.
+**Live-verified:** confirmed.
+**Full trace:** `session-2026-08-23-part2-fr03-fr02-bug02.md`.
+
+## AMEND-2026-08-23-010 — FR-01: Chronological candidate list ordering
+
+**Flow:** Flow A
+**Defect:** confirmed via live Activity trace that Microsoft Graph does not return calendar events in chronological order — verified against real evidence rather than assumed.
+**Fix:** new Compose action `FA09C_Sort_CandidatesByStartTime` inserted after `FA09B`, using `@sort(body('FA09B_Filter_ExcludeLeaveAndPeriodEntries'), 'start')`. Same six downstream consumers repointed from `FA09B` to `FA09C`.
+**Bug found and fixed safely via `PA - Scratch Diagnostics` before touching production:** WDL's `sort()` does not accept lambda/arrow-function syntax (`(item) => ...`); correct signature is `sort(array, 'propertyName')` with the key as a plain string, confirmed via the scratch flow's runtime error message before being applied live.
+**Live-verified:** confirmed — candidate list now displays in correct chronological order.
+**Full trace:** `session-2026-08-23-part3-fr01.md`.
+
+---
+
 ## Pre-log history (not numbered, see original docs)
 
 Significant fixes made before this log began, documented in their own dated handover docs:
