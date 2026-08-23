@@ -4,17 +4,17 @@
 
 Companion to `known-good-values-master-reference.md`, which covers Flow B only. This document covers **Flow A**. Created 23 August 2026 after Flow Checker found 2 corrupted actions in Flow A at session start — the first confirmed corruption incident in Flow A (previously only Flow B and Email Triage were affected).
 
-**Last verified against live flow:** 23 August 2026 (session start, via full Peek Code capture pasted by David).
+**Last verified against live flow:** 23 August 2026 (fix confirmed applied and re-entered by David, Flow Checker clean).
 
 ---
 
-## Corruption incident — 23 August 2026 (session start)
+## Corruption incident — 23 August 2026 (session start) — RESOLVED
 
 **Symptom:** Flow Checker showed 2 operation errors on opening Flow A:
 - `FA33A Set varCandidateListText Empty` — Parameter error: 'Value' is required.
 - `FA34A Set varCandidateIndex One` — Parameter error: 'Value' is required.
 
-**Peek Code confirmed both actions have `value` blanked:**
+**Peek Code confirmed both actions had `value` blanked:**
 ```json
 "FA33A_Set_varCandidateListText_Empty": {
   "type": "SetVariable",
@@ -27,19 +27,19 @@ Companion to `known-good-values-master-reference.md`, which covers Flow B only. 
 }
 ```
 
-**Analysis:** Consistent with the known platform corruption pattern (Set/InitializeVariable value fields wiped). `FA33A`'s blanked value happens to coincide with its correct value (empty string reset), so Flow Checker's complaint there is about the field being technically unset rather than a wrong value. `FA34A`'s value is genuinely wrong — the action name and its position immediately before `FA35_Apply_to_each_CandidateArray_ForList` (which builds a 1-indexed numbered list via `FA36_Append_to_string_varCandidateListText` + `FA37_Increment_varCandidateIndex`) confirm the reset value must be `1`.
+**Analysis:** Consistent with the known platform corruption pattern (Set/InitializeVariable value fields wiped). The literal `""` shown by Peek Code was a corrupted/degraded state, not the true correct value — the correct value uses the `@string('')` expression form (consistent with the pattern used elsewhere in this flow: `FA27D`, `FA32`, `FA41`, `FA42`, etc.), not a bare empty string literal. `FA34A`'s correct value is the integer `1`, confirmed by its position immediately before `FA35_Apply_to_each_CandidateArray_ForList`, which builds a 1-indexed numbered list via `FA36_Append_to_string_varCandidateListText` + `FA37_Increment_varCandidateIndex`.
 
-**Fix to apply:**
+**Fix applied and confirmed (23 Aug):**
 | Action | Correct value | Type |
 |---|---|---|
-| `FA33A_Set_varCandidateListText_Empty` | `` (empty string) | string |
-| `FA34A_Set_varCandidateIndex_One` | `1` | (matches `varCandidateIndex`, initialized as integer in `FA34_Initialize_varCandidateIndex`) |
+| `FA33A_Set_varCandidateListText_Empty` | `@string('')` | string (expression) |
+| `FA34A_Set_varCandidateIndex_One` | `1` | integer literal |
 
-**Status:** Fix identified, not yet applied in Designer as of this write-up. Apply via Parameters tab (Code view is read-only), save draft, re-run Flow Checker, publish.
+**Status:** ✅ Fix applied in Designer, Peek Code re-confirmed by David, both actions now correct. Flow Checker should now show 0 errors — re-run to confirm before publishing.
 
 ---
 
-## Full flow structure (as captured 23 Aug 2026, pre-fix)
+## Full flow structure (as captured 23 Aug 2026)
 
 ### Trigger
 `Request` (Skills kind), schema fields: `text_1` (InSelectedNumber), `text_3` (DateContext). Both required.
@@ -86,8 +86,8 @@ Companion to `known-good-values-master-reference.md`, which covers Flow B only. 
 - `FA32_Compose_OutCandidateList_Single` → `@string('')`
 
 **Else (multi-match branch):**
-- `FA33A_Set_varCandidateListText_Empty` (SetVariable) → `varCandidateListText` = `""` ⚠️ *corrupted 23 Aug, see incident above*
-- `FA34A_Set_varCandidateIndex_One` (SetVariable) → `varCandidateIndex` = `1` ⚠️ *corrupted 23 Aug, see incident above*
+- `FA33A_Set_varCandidateListText_Empty` (SetVariable) → `varCandidateListText` = `@string('')` ✅ *corrected 23 Aug*
+- `FA34A_Set_varCandidateIndex_One` (SetVariable) → `varCandidateIndex` = `1` ✅ *corrected 23 Aug*
 - `FA35_Apply_to_each_CandidateArray_ForList` (Foreach over `@outputs('FA09_RAW_CandidateArray_DoNotUseDownstream')`):
   - `FA36_Append_to_string_varCandidateListText` → `@concat(string(variables('varCandidateIndex')), '. ', coalesce(item()?['subject'], 'Untitled meeting'), decodeUriComponent('%0D%0A'))`
   - `FA37_Increment_varCandidateIndex` → increment `varCandidateIndex` by `1`
@@ -127,9 +127,9 @@ Companion to `known-good-values-master-reference.md`, which covers Flow B only. 
 
 1. Confirm which actions lost their value (Peek Code + Flow Checker — note Flow Checker misses some blanked values, e.g. where the blank happens to be correct).
 2. Cross-check this table.
-3. Paste back exactly — do not retype from memory.
+3. Paste back exactly — do not retype from memory. Note: some "empty string" values in this flow use the expression `@string('')` rather than a bare literal `""` — check the table above for the exact form per action, as Peek Code can display a corrupted literal `""` that looks superficially plausible but is not the original expression.
 4. Save draft, run Flow Checker, then Publish before testing.
 5. Update this doc's "Last verified" date if anything needed correcting.
 
 ---
-*Created 23 August 2026. Companion to `known-good-values-master-reference.md` (Flow B). Seed capture via David's full Peek Code paste during the 23 Aug corruption incident.*
+*Created 23 August 2026. Updated same day once fix was confirmed applied. Companion to `known-good-values-master-reference.md` (Flow B). Seed capture via David's full Peek Code paste during the 23 Aug corruption incident.*
