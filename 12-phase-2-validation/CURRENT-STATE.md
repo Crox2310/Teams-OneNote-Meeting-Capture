@@ -1,10 +1,13 @@
 # CURRENT STATE — Teams-OneNote Meeting Capture (start here)
 
-**Last updated:** 29 August 2026
+**Last updated:** 30 August 2026
 **⚠️ New Claude instance: read these session notes first (most recent first):**
 
+**30 August — Stage 0 of the 29 August backlog. Four factual checks, no changes.**
+- `findings-2026-08-30-stage-0-facts.md` — **start here for what to do next.** All four checks resolved or narrowed. Two fail (S0.1: `<title>` doesn't set OneNote page title, and is structurally blocked by publish-time HTML stripping; S0.2: Teams Graph HTTP request cannot reach OneNote endpoints, connector-level allow-list confirmed). S0.3 split (environment is solution-aware, confirmed; flow-invocation compatibility deferred to Stage 7 live test). S0.4 narrowed (SharePoint indexing confirmed safe for Stage 1's `$filter` change; root cause of the original 21 Aug empty result still open, leading candidate is a timing issue).
+
 **29 August — design and review session. No flows changed.**
-- `design-2026-08-29-target-state-and-backlog.md` — **start here for what to do next.** Target-state user journey, the additive-contract rule, retention decision, and the ordered Stage 0–7 backlog with a test gate on each stage.
+- `design-2026-08-29-target-state-and-backlog.md` — Target-state user journey, the additive-contract rule, retention decision, and the ordered Stage 0–7 backlog with a test gate on each stage.
 - `analysis-2026-08-29-architecture-outside-view.md` — outside-view architecture review. Flow boundaries, agents vs flows, the case against automating OneNote lane routing, state and coordination, critique of the Flow C design, and structural performance findings.
 - `addendum-2026-08-29-contract-naming.md` — extends the 23 Aug naming audit to the `text_n` contract layer, and argues for doing it first via additive migration rather than last.
 - `build-narrative-log.md` — running record of decisions and lessons, kept separate from `amendment-log.md`. Source material for the build-method presentation.
@@ -31,11 +34,13 @@
 
 ## TL;DR
 
+**30 August — Stage 0 complete. Four factual checks resolved, no changes made to any flow, Topic, or list.** S0.1 and S0.2 both fail, closing off two possible simplifications (relying on `<title>` for OneNote page naming, and using Teams' Graph HTTP action to reach OneNote) — neither changes the existing plan for Stage 5 or Flow C, since both were "nice if it works" checks rather than blocking ones. S0.3 confirms the environment is solution-aware; the flow-invocation half is deferred to Stage 7, where it can be tested against a real child flow rather than guessed at from documentation. S0.4 rules out three of four candidate causes for the 21 August `Get_items` mystery and confirms Stage 1's planned `$filter` change is safe to build as designed; the original root cause stays open as a minor unresolved thread.
+
 **23 August — a complete, exceptional day. Every item raised (all backlog carry-overs and everything discovered live) is now resolved.** BUG-01 (second-occurrence recurring capture overwrite) fully root-caused and fixed. First-ever Flow A corruption incident handled. FR-03 (link shortening) resolved via markdown hyperlink. FR-02 (holiday/leave/period/admin-block filter) built and live, 11 patterns, three real bugs caught and fixed during the build. BUG-02 (zero-match day navigation gap) discovered and fixed same-day. FR-01 (chronological ordering) confirmed as a genuine bug via live evidence, built, and fixed — with the correct WDL `sort()` syntax discovered safely in the scratch flow rather than against production.
 
-**28–29 August — scope moved to chat capture and then to architecture.** Flow C is designed but not built. A full outside-view architecture review was run on 29 August and produced a defined target state plus an ordered backlog. **Nothing was changed in Flow A, Flow B, the Topic, or the SharePoint list during that session.**
+**28–29 August — scope moved to chat capture and then to architecture.** Flow C is designed but not built. A full outside-view architecture review was run on 29 August and produced a defined target state plus an ordered backlog.
 
-**Next action: Stage 0 of the backlog — four factual checks, no changes.** See `design-2026-08-29-target-state-and-backlog.md`.
+**Next action: Stage 1 of the 29 August backlog**, now that Stage 0's four facts are settled. See `design-2026-08-29-target-state-and-backlog.md` and `findings-2026-08-30-stage-0-facts.md` for what Stage 0 resolved.
 
 ---
 
@@ -57,6 +62,7 @@
 | **BadGateway fix (native Create item, status 201)** | ✅ Verified end-to-end |
 | **UJ5b/UJ5a/UJ4b/UJ3** | ✅ Published (22 Aug evening) |
 | Character-gap fix, link-format fix, FB-05 | ✅ Published |
+| **SharePoint `SeriesMasterId` indexing** | ✅ Confirmed already in place, accepts `$filter` cleanly (30 Aug) |
 
 ## Remaining backlog — explicitly not urgent
 
@@ -66,7 +72,7 @@
 | UJ4a — Section choice disambiguation | No design work started. Same category as above. |
 | UJ4c — SectionRetryCount retry loop | Higher corruption risk (Do Until shape) than the other two. |
 | `Condition_Should_Write_Mapping` explicit guard | Defense-in-depth candidate, root cause already fixed upstream. |
-| Flow A solution-aware / VS Code editable | One-time setup step, not started. **Now blocking:** Stage 7 of the 29 Aug backlog depends on whether child flows are available. |
+| Flow A solution-aware / VS Code editable | One-time setup step, not started. Environment itself confirmed solution-aware 30 Aug (`findings-2026-08-30-stage-0-facts.md`) — setup work itself still not started. Stage 7 depends on this. |
 
 ### Process debt
 | Item | Priority | Notes |
@@ -81,21 +87,27 @@
 - **Do attendees appear in page content today?** Determines the size of the findability work.
 - **Recurring-chat pagination gap** — still open, carried from 28 Aug. Should close before Flow C is treated as production-ready.
 
+## Open questions raised 30 August
+
+- **Does Flow B's `Create_OneNote_Page` use the same connector action tested in S0.1?** If so, the publish-time HTML-wrapper-stripping found in S0.1 applies to production too, regardless of how `text_3` builds its HTML. Check before Stage 5 build work starts.
+- **Exact timestamp of the original 21 August `Get_items` failure** — needed to confirm or rule out the leading explanation (the row tested against didn't exist yet at the time of the failing run).
+
 ## Working-method notes worth carrying forward
 
-- **`PA - Scratch Diagnostics`** continues to be the right default for testing any WDL expression syntax that isn't already proven in this codebase — caught the `sort()` lambda-syntax error safely on 23 Aug, avoiding a live production error.
+- **`PA - Scratch Diagnostics`** continues to be the right default for testing any WDL expression syntax that isn't already proven in this codebase — caught the `sort()` lambda-syntax error safely on 23 Aug, avoiding a live production error. On 30 Aug it also caught that the flow designer's Page Content field silently strips full-document HTML down to a fragment at Publish time — worth remembering this applies to any future OneNote HTML-content work, not just S0.1.
 - **WDL does not support arrow-function/lambda syntax** anywhere encountered so far (`select()`, `isMatch` doesn't exist at all — that's Power Fx only, `sort()` takes a plain string key name, not an expression). Worth checking any new WDL function's exact signature against real evidence before assuming JS/Power-Fx-style syntax will work.
-- **Always re-pull fresh Peek Code to verify a build step actually took**, rather than assuming a paste or edit succeeded — caught three real bugs on 23 Aug this way.
+- **Always re-pull fresh Peek Code to verify a build step actually took**, rather than assuming a paste or edit succeeded — caught three real bugs on 23 Aug this way, and caught a stale/unedited Page Content value twice on 30 Aug the same way.
 - **All contract changes are additive from here on** (29 Aug decision): add the new path, prove it, remove the old one as a separate change. The agent stays usable throughout.
 
 ## Recommended next session
 
-1. **Stage 0 of the 29 August backlog** — four factual checks, no changes to anything. Roughly one short session. Two of the four determine the shape of later work.
+1. **Stage 1 of the 29 August backlog** — now unblocked by Stage 0's findings. The `$filter` change on `Get_items` can proceed as designed (S0.4 confirms indexing is already in place).
 2. **Submit the Microsoft support ticket** — still the only outstanding "should do soon" item from the 23 Aug list.
 3. Update `amendment-log.md` with the full 23 August change set.
 
 ## Where to look for detail
 
+- **`findings-2026-08-30-stage-0-facts.md`** — Stage 0 results: four factual checks, what they mean for Stage 5 and Stage 7.
 - **`design-2026-08-29-target-state-and-backlog.md`** — target state, backlog, test gates. The operative planning document.
 - **`analysis-2026-08-29-architecture-outside-view.md`** — the reasoning behind the backlog, including disagreements with decisions already documented.
 - **`build-narrative-log.md`** — decisions and lessons, for the build-method presentation.
