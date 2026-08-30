@@ -100,5 +100,17 @@ These are the threads that run through the whole build and are the likely spine 
 **What generalises:** mapping the journey against the machinery underneath made visible that the capability built is wider than the capability experienced. Flow B differentiates six status values; the Topic collapses them into two messages.
 **Evidence:** `design-2026-08-29-target-state-and-backlog.md`
 
+### 2026-08-30 — a UI field silently rewriting content is a distinct failure mode from a wrong assumption
+**Decision or discovery:** the flow designer's Page Content parameter field strips full HTML document wrapper tags (`<html>`, `<head>`, `<body>`) down to fragment-only content at Publish time, discovered only by comparing Code view before and after Publish rather than by inference from the API response alone. Two of six total S0.1 test attempts also produced no usable signal purely from copy-paste and rich-text-vs-code-view mistakes in the same field.
+**Why:** the API response (`title: ""`) was consistent with several different explanations — OneNote ignoring `<title>`, the connector never receiving valid HTML, or the field silently rewriting the payload before submission — and only direct inspection of the field's own content across the publish step distinguished between them.
+**What generalises:** when a test result is ambiguous between "the target system behaved a certain way" and "my own tooling altered my input before it got there," the second is worth checking directly (compare the artifact before and after each processing step) rather than assumed away. This applies beyond this one field — any UI field with hidden normalisation is a source of false negatives that look identical to a real one.
+**Evidence:** `findings-2026-08-30-stage-0-facts.md`
+
+### 2026-08-30 — two "nice if it works" checks both failed, and neither changed the plan
+**Decision or discovery:** S0.1 (`<title>` sets OneNote page title) and S0.2 (Teams Graph HTTP reaches OneNote) both tested negative. Both were checks on an optimisation to the *existing* plan (removing the title-fix chain; enabling structured named-region writes), not on the plan's viability itself.
+**Why:** the Stage 0 backlog was deliberately scoped to separate facts that reshape later stages from facts that merely confirm or deny a shortcut.
+**What generalises:** a negative result on an optimisation check is a fast, cheap way to stop a team spending build time chasing a shortcut that documentation or intuition suggested might exist — closing the door quickly is itself the value, even when the news is "no."
+**Evidence:** `findings-2026-08-30-stage-0-facts.md`
+
 ---
 *Add entries at the point of decision, not retrospectively. Retrospective entries lose the reasoning, which is the part worth keeping.*
