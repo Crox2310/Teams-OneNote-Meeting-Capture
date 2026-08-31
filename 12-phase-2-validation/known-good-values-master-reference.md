@@ -6,7 +6,7 @@ The recurring platform-level corruption pattern (11+ incidents as of 23 August) 
 
 **This document covers Flow B** (`PA - Resolve OneNote Meeting Section - v2 Clean Build`). Keep it current: update whenever an expression changes, before moving on.
 
-**Last verified against live flow:** 23 August 2026 (session — 21-action corruption incident recovered and republished; `Set_varOutStatus` expression corrected; BUG-01 resolved and validated end-to-end).
+**Last verified against live flow:** 31 August 2026 (Stage 1 safety net built and gated — S1W01–S1W05 write-back chain added, `varOneOffMappingId` initialised, `S1_Filter_Pages_By_Title_PreCreate` null-guarded).
 
 ---
 
@@ -29,6 +29,7 @@ The recurring platform-level corruption pattern (11+ incidents as of 23 August) 
 | `varTargetSectionPagesUrl` | string | *(none)* | Normal |
 | `varOneNoteResolverResult` | string | *(none)* | Normal |
 | `varPageAction` | string | *(none)* | Normal |
+| `varOneOffMappingId` | string | *(none)* | Added 31 Aug — stores ID of newly created one-off mapping row for use by S1W05 across branch boundary |
 
 ---
 
@@ -71,8 +72,19 @@ The recurring platform-level corruption pattern (11+ incidents as of 23 August) 
 | `Set_varPageAction_ExistsNoCreate` | `Updated` (literal) | 23 Aug |
 | `Set_varOutputPageSelfUrl_Existing` | `@variables('varFinalExistingPageSelfUrl')` | 23 Aug |
 | `Set_varPageAction_UpdatedAppend` | `Updated` (literal) | 23 Aug |
-| `Set_varOutputPageLink_Existing` | `@first(body('Filter_Existing_Mapping'))?['PageWebUrl']` | 23 Aug |
+| `Set_varOutputPageLink_Existing` | `@first(coalesce(body('Filter_Existing_Mapping'), body('OF01_—_Filter_Existing_Mapping_OneOff'), createArray()))?['PageWebUrl']` | 23 Aug |
 | `Set_varOutputPageLink_Created_OneOff` | `@outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']` | 23 Aug |
+
+## SetVariable actions — Stage 1 safety net (added 31 Aug)
+
+These actions live inside the True branch of `S1_Condition_Title_Safety_Check`, after `S1_Set_varOutputPageLink`.
+
+| Action | Value | Last confirmed |
+|---|---|---|
+| `S1_Set_varPageAction_UpdatedAppend` | `UpdatedAppend` (literal) | 31 Aug |
+| `S1_Set_varOutputPageSelfUrl` | `@first(body('S1_Filter_Pages_By_Title_PreCreate'))?['self']` | 31 Aug |
+| `S1_Set_varOutputPageLink` | `@first(body('S1_Filter_Pages_By_Title_PreCreate'))?['links']?['oneNoteWebUrl']?['href']` | 31 Aug |
+| `S1_Set_varOneOffMappingId` | `@string(body('S1_Create_Mapping_Item_OneOff')?['ID'])` | 31 Aug |
 
 ---
 
@@ -93,27 +105,44 @@ The recurring platform-level corruption pattern (11+ incidents as of 23 August) 
 | `Compose_SectionMatchCount_Recurring` | `@string(length(body('Filter_OneNote_Section_Recurring')))` | 22 Aug |
 | `Compose_SectionMatchCount_OneOff` | `@string(length(body('Filter_OneNote_Section_OneOff')))` | 22 Aug |
 
+## Stage 1 Compose actions (added 31 Aug)
+
+| Action | Value | Last confirmed |
+|---|---|---|
+| `S1_Compose_UpdateHtmlFragment` | `@concat('<hr><h2>Automated update</h2><p><strong>Updated by:</strong> Meeting Capture Agent</p><p><strong>Update note:</strong> A page with a matching title already existed in OneNote with no corresponding mapping row. The automation appended below rather than creating a duplicate page.</p>', triggerBody()?['text_3'])` | 31 Aug |
+| `S1_Compose_FoundPageId` | `@if(greater(length(body('S1_Filter_Pages_By_Title_PreCreate')), 0), first(body('S1_Filter_Pages_By_Title_PreCreate'))?['id'], '')` | 31 Aug |
+
 ### Compose_SafeSectionName (all three instances)
 
 **`Compose_SafeSectionName`** (recurring CREATE path):
 ```
-@if(empty(trim(coalesce(outputs('Compose_SectionDisplayName'), ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))  
+@if(empty(trim(coalesce(outputs('Compose_SectionDisplayName'), ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))
 ```
 
 **`Compose_SafeSectionName_ExistingBranch`**:
 ```
-@if(empty(trim(coalesce(outputs('Compose_SectionDisplayName_ExistingBranch'), ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName_ExistingBranch'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName_ExistingBranch'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))  
+@if(empty(trim(coalesce(outputs('Compose_SectionDisplayName_ExistingBranch'), ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName_ExistingBranch'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(outputs('Compose_SectionDisplayName_ExistingBranch'), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))
 ```
 
 **`FB-F01_—_Compose_Input_MeetingTitle_(one-off)`**:
 ```
-@if(empty(trim(coalesce(triggerBody()?['text_1'], ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(triggerBody()?['text_1'], '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(triggerBody()?['text_1'], '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))  
+@if(empty(trim(coalesce(triggerBody()?['text_1'], ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(triggerBody()?['text_1'], '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(triggerBody()?['text_1'], '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''))))))
 ```
 
 ### Compose_SafePageTitle (both instances)
 
 ```
 @if(empty(trim(coalesce(triggerBody()?['text_1'], ''))), 'Untitled Meeting', concat(substring(replace(replace(replace(replace(triggerBody()?['text_1'], '&', 'and'), '<', ''), '>', ''), '"', ''), 0, min(150, length(replace(replace(replace(replace(triggerBody()?['text_1'], '&', 'and'), '<', ''), '>', ''), '"', '')))), if(empty(coalesce(triggerBody()?['text_5'], '')), '', concat(' - ', formatDateTime(triggerBody()?['text_5'], 'd MMM yyyy')))))
+```
+
+### S1_Filter_Pages_By_Title_PreCreate where clause (null-guarded, 31 Aug)
+
+```
+@if(
+  empty(coalesce(triggerBody()?['text_5'], '')),
+  equals(coalesce(item()?['title'], ''), outputs('Compose_SafePageTitle')),
+  contains(coalesce(item()?['title'], ''), formatDateTime(triggerBody()?['text_5'], 'd MMM yyyy'))
+)
 ```
 
 ### Filter_Existing_Mapping where clause (UJ4b guard added 22 Aug evening)
@@ -162,8 +191,16 @@ False branch: empty — flow continues with blank vars, `OutStatus` = `SETUP_SEC
 | `Get_items` | `dataset: https://jsainsbury.sharepoint.com/sites/coplt`, `table: 186b3c9f-e758-4e85-83d5-685946614a0a` | 22 Aug |
 | `Create_Mapping_Item_Recurring` | `PostItem`, fields: Title=Mapping, SeriesMasterId, MeetingTitle, SectionPagesUrl, Status/Value=Active, OccurrenceDate | 22 Aug |
 | `Create_Mapping_Item_OneOff` | `PostItem`, fields: Title=Mapping, MeetingId, MeetingTitle, SectionPagesUrl, Status/Value=Active | 22 Aug |
-| `HTTP_Update_SP_PageSelfUrl` | URI references `body('Create_Mapping_Item_Recurring')?['ID']` | 22 Aug |
-| `OF09b_—_HTTP_Update_SP_PageSelfUrl_(OneOff)` | URI references `body('Create_Mapping_Item_OneOff')?['ID']` | 22 Aug |
+| `HTTP_Update_SP_PageSelfUrl` | MERGE, URI references `body('Create_Mapping_Item_Recurring')?['ID']` | 22 Aug |
+| `OF09b_—_HTTP_Update_SP_PageSelfUrl_(OneOff)` | MERGE, URI references `body('Create_Mapping_Item_OneOff')?['ID']` | 22 Aug |
+
+## Stage 1 SharePoint connector actions (added 31 Aug)
+
+| Action | Key parameters | Notes |
+|---|---|---|
+| `S1_Create_Mapping_Item_OneOff` | `PostItem`, fields: Title=Mapping, MeetingTitle=`@outputs('FB-F01_—_Compose_Input_MeetingTitle_(one-off)')`, SectionPagesUrl=`@variables('varTargetSectionPagesUrl')`, Status/Value=Active, MeetingId=`@triggerBody()?['text_4']` | PageSelfUrl/PageWebUrl left blank — written by S1W05 via MERGE |
+| `S1_HTTP_Update_SP_Mapping_Recurring` | MERGE, URI: `_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items(@{if(greater(length(body('Filter_Existing_Mapping')),0), first(body('Filter_Existing_Mapping'))?['ID'], body('Create_Mapping_Item_Recurring')?['ID'])})` | Body: `{"PageSelfUrl": "@{variables('varOutputPageSelfUrl')}", "PageWebUrl": "@{variables('varOutputPageLink')}"}` |
+| `S1_HTTP_Update_SP_Mapping_OneOff` | MERGE, URI: `_api/web/lists/GetByTitle('RecurringMeetingSectionMap')/items(@{if(greater(length(body('OF01_—_Filter_Existing_Mapping_OneOff')),0), first(body('OF01_—_Filter_Existing_Mapping_OneOff'))?['ID'], variables('varOneOffMappingId'))})` | Body: `{"PageSelfUrl": "@{variables('varOutputPageSelfUrl')}", "PageWebUrl": "@{variables('varOutputPageLink')}"}` |
 
 ---
 
@@ -175,15 +212,13 @@ False branch: empty — flow continues with blank vars, `OutStatus` = `SETUP_SEC
 
 1. **`varFinalMatchCount_1`/`varFinalPageDecision_1`/`varFinalExistingPageSelfUrl_1` corruption** — these were blanked by the platform corruption pattern, causing `Condition_Mapping_Exists` to always evaluate as "no existing mapping" regardless of what `Filter_Existing_Mapping` actually found. Fixed by restoring the three expressions above (23 Aug).
 2. **`Set_varOutStatus` paren-balance typo** — blocked publishing entirely after the above fix; corrected (23 Aug, see Correction log above).
-3. **Root structural cause: the `SeriesMasterId` column on `RecurringMeetingSectionMap` had "Enforce unique values" = Yes.** This SharePoint list-level constraint meant *any* second row for the same series — regardless of `OccurrenceDate` — would be rejected by SharePoint with a `duplicate values were found in the following field(s): [SeriesMasterId]` error, even once the flow's own logic (which correctly keys uniqueness on `SeriesMasterId` + `OccurrenceDate` together via `Filter_Existing_Mapping`) was working correctly. **Fixed by setting Enforce unique values → No** on the `SeriesMasterId` column (List settings → Columns → SeriesMasterId → Edit column). The flow's own `Filter_Existing_Mapping` where-clause already prevents true duplicate rows at the logic layer, so removing the column constraint is safe.
+3. **Root structural cause: the `SeriesMasterId` column on `RecurringMeetingSectionMap` had "Enforce unique values" = Yes.** This SharePoint list-level constraint meant *any* second row for the same series — regardless of `OccurrenceDate` — would be rejected by SharePoint with a `duplicate values were found in the following field(s): [SeriesMasterId]` error, even once the flow's own logic was working correctly. **Fixed by setting Enforce unique values → No** on the `SeriesMasterId` column. The flow's own `Filter_Existing_Mapping` where-clause already prevents true duplicate rows at the logic layer.
 
-**Validated 23 Aug:** clean list + clean OneNote section, captured occurrence 1 (24 Aug) → 1 SharePoint row, 1 OneNote page. Captured occurrence 2 (31 Aug, same series) → 2nd SharePoint row created successfully (distinct `OccurrenceDate`), 2nd OneNote page created successfully, neither overwrote the other. Confirmed via SharePoint list view and OneNote page inspection.
-
-**`Condition_Should_Write_Mapping` residual note:** this condition still gates purely on `@equals(toLower(string(triggerBody()?['text'])), 'true')` (i.e. "is this recurring") with no explicit match-count guard. With the three items above fixed, `Condition_Mapping_Exists` now correctly routes existing mappings away from this branch before it's ever reached, so it's no longer believed to be reachable with a live duplicate in the tested scenarios. Retained as a defense-in-depth candidate for a future session, not urgent.
+**Validated 23 Aug:** clean list + clean OneNote section, captured occurrence 1 (24 Aug) → 1 SharePoint row, 1 OneNote page. Captured occurrence 2 (31 Aug, same series) → 2nd SharePoint row created successfully, 2nd OneNote page created successfully, neither overwrote the other.
 
 ## ✅ Data-integrity issue — orphaned/skeleton mapping rows — mitigated, UJ3b still open
 
-Rows in `RecurringMeetingSectionMap` can end up with `Title`/`SeriesMasterId`/`MeetingTitle`/`Status`/`OccurrenceDate` populated but `SectionPagesUrl` (and other Section/Page fields) blank, if an earlier run failed after creating the mapping row but before completing the OneNote page/section creation. When `Filter_Existing_Mapping` matches such a row, `Set_varTargetSectionPagesUrl_ExistingMapping` pulls a blank `SectionPagesUrl`, and `Create_OneNote_Page` then fails with "The section id given in the input is invalid." One such orphaned row (ID 279) was found and manually deleted on 23 Aug as part of BUG-01 diagnosis. **UJ3b (automatic stale-row cleanup) remains not built** — until built, orphaned rows must be manually deleted from the SharePoint list before retesting an affected series.
+Rows in `RecurringMeetingSectionMap` can end up with `Title`/`SeriesMasterId`/`MeetingTitle`/`Status`/`OccurrenceDate` populated but `SectionPagesUrl` (and other Section/Page fields) blank, if an earlier run failed after creating the mapping row but before completing the OneNote page/section creation. **UJ3b (automatic stale-row cleanup) remains not built** — until built, orphaned rows must be manually deleted from the SharePoint list before retesting an affected series.
 
 ---
 
@@ -192,9 +227,9 @@ Rows in `RecurringMeetingSectionMap` can end up with `Title`/`SeriesMasterId`/`M
 1. Confirm which actions lost their value (Peek Code + Flow Checker — note Flow Checker misses some blanked values).
 2. Cross-check this table. If "Last confirmed" predates the most recent session note, check that session note for any subsequent changes.
 3. Paste back exactly — do not retype from memory.
-4. For long nested expressions (e.g. `Set_varOutStatus`), verify parenthesis balance before pasting if the flow rejects the save with a `TemplateValidationError` — a single mismatched paren will fail validation even when the rest of the expression is correct.
+4. For long nested expressions (e.g. `Set_varOutStatus`), verify parenthesis balance before pasting if the flow rejects the save with a `TemplateValidationError`.
 5. Save draft, run Flow Checker, then Publish before testing.
 6. Update this doc's "Last verified" date if anything needed correcting.
 
 ---
-*Last updated 23 August 2026. Supersedes all prior versions.*
+*Last updated 31 August 2026. Supersedes all prior versions.*
