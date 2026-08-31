@@ -1,10 +1,13 @@
 # CURRENT STATE — Teams-OneNote Meeting Capture (start here)
 
-**Last updated:** 31 August 2026 (end of day)
+**Last updated:** 31 August 2026 (evening — Flow C design session)
 **New Claude instance: read session notes first, most recent first.**
 
+**31 August (evening) — Flow C design decisions settled.**
+- Handoff doc (inline) — chat chain proven in scratch. Append-only confirmed. Four-section page template off the table. Internal AI gateway endpoint outstanding. See "Flow C design" section below.
+
 **31 August — Stages 1, 2, 3, and 4 all closed.**
-- `session-2026-08-31-stage-3-remove-second-flow-a-call.md` — start here. Stage 3 built and gated. Second Flow A call removed. Cancel fall-through fixed. All six gate tests green.
+- `session-2026-08-31-stage-3-remove-second-flow-a-call.md` — Stage 3 built and gated. Second Flow A call removed. Cancel fall-through fixed. All six gate tests green.
 - `session-2026-08-31-stage-2-and-stage-4.md` — Stage 2 (date in opening utterance + header) and Stage 4 (struck, already complete).
 - `session-2026-08-31-stage-1-safety-net.md` — Stage 1 safety net, gated, UJ1-UJ5 regression passed.
 
@@ -26,9 +29,52 @@
 
 **31 August — four stages closed.** Stage 1 (safety net), Stage 2 (date in prompt), Stage 3 (second Flow A call removed), Stage 4 (struck). Flow A, Flow B, and Topic all published.
 
-**Next action: Stage 5 — Perceived latency.** Check `Create_OneNote_Page` connector action against S0.1 first.
+**Next action: Flow C skeleton.** Full chain without AI step, hardcoded summary, gated against Supply Chain Product Team Meeting (Fri 29 Aug). Chat chain proven in PA - Scratch Diagnostics. Build order below.
 
-**Tomorrow context:** transcript data may arrive. Stage 7 (Flow C) is the relevant stage. Gated on S0.3. Four-section page template in Flow B is a Flow C prerequisite — not yet built.
+**Blocker for AI step:** Sainsbury's internal AI gateway endpoint and auth not yet confirmed. Ask internal AI/tech team: "What is the HTTP endpoint and auth method for calling Claude Sonnet or Opus from Power Automate?"
+
+---
+
+## Flow C design decisions (settled 31 Aug)
+
+- New separate flow, new Copilot Studio Topic, on-demand only (user triggers after meeting ends)
+- Page lookup via SharePoint mapping table (RecurringMeetingSectionMap) — no fresh calendar resolution
+- AI judges and summarises in one pass: structured notes if content worth recording, fixed marker ("No additional discussion captured in chat for this session.") if not
+- Image-only messages skipped
+- Append-only to OneNote — confirmed by S0.2 (Teams Graph HTTP connector cannot reach OneNote endpoints) and S0.1 (native OneNote connector strips HTML wrapper tags at publish time)
+- Four-section page template **off the table** — append-only approach makes it unnecessary; Flow B page creation unchanged
+- Each chat capture appends a timestamped "Chat Summary" block, same pattern as Flow B's Compose_UpdateHtmlFragment
+- AI call will use Sainsbury's internal AI gateway (not public Anthropic API) — endpoint details not yet confirmed
+- JoinUrl column added to RecurringMeetingSectionMap SharePoint list ✓
+
+### Chat chain — proven working in PA - Scratch Diagnostics
+
+- JoinUrl → Teams "Get an online meeting" (lookupType: joinWebUrl) → chatInfo.threadId ✓
+- threadId → Teams Graph HTTP `me/chats/{threadId}/messages?$top=50&$orderby=createdDateTime desc` → 200, messages returned ✓
+- Test meeting: Supply Chain Product Team Meeting, Friday 29 Aug 2026
+
+### Four findings from message data
+
+1. Thread spans all occurrences — date filter required (`greaterOrEquals(ticks(item()?['createdDateTime']), ticks(meetingStartTime))`)
+2. `messageType: "unknownFutureValue"` messages are system events — filter to `messageType: "message"` only
+3. Image-only messages exist (GIFs etc.) — skip where body content is purely `<img>` tags
+4. `@odata.nextLink` present — pagination gap accepted for first build, address later
+
+### Flow C skeleton — build order
+
+1. Get meeting row from SharePoint mapping table by SeriesMasterId + OccurrenceDate
+2. SC01 Get Online Meeting (proven)
+3. SC02 Compose ThreadId (proven)
+4. SC03 Get Chat Messages (proven)
+5. Filter: messageType = "message" only
+6. Filter: date >= meeting start time
+7. Filter: skip image-only messages
+8. Compose: format messages as {speaker}: {text} list (stripping HTML)
+9. Hardcoded compose: "Chat Summary — [date] [time]\nUpdated by: Meeting Capture Agent\n\n[hardcoded test summary]"
+10. OneNote UpdatePageContent — append to existing page using PageSelfUrl from mapping table
+11. Gate against Supply Chain Product Team Meeting (Fri 29 Aug)
+12. Wire AI step once internal endpoint confirmed
+13. Build new Copilot Studio Topic for chat capture trigger
 
 ---
 
@@ -50,9 +96,11 @@
 
 | Stage | Item | Status |
 |---|---|---|
-| Stage 5 | Perceived latency | Not started — next |
+| Flow C | Chat capture skeleton | Next — build order above |
+| Flow C | AI step | Blocked on internal AI gateway endpoint |
+| Flow C | Copilot Studio Topic | After skeleton gated |
+| Stage 5 | Perceived latency | Not started |
 | Stage 6 | Naming convention audit | Not started |
-| Stage 7 | Child-flow extraction and Flow C | Not started, gated on S0.3 |
 
 ## Process debt
 
@@ -61,20 +109,20 @@
 | Microsoft support ticket | Overdue — please submit | `microsoft-discussion-brief-corruption-bug.md` |
 | Amendment log | Needs updating | 31 Aug Stage 2 and Stage 3 changes not yet logged |
 | `known-good-values-flow-a-reference.md` | Needs Stage 3 additions | FA12B and candidatesjson not yet documented |
-| Flow C prerequisite: four-section page template | Not built | Flow B change needed before Flow C writes to structured sections |
 
 ## New backlog items from 31 Aug
 
 - **OnlineMeetingUrl extraction from body HTML** — connector returns no `onlineMeeting` object; always `''`. Separate work item.
 - **FA29B unguarded substring** — same class of bug as FA12B fix. Add to Stage 6.
 - **FA11/FA12 dead code removal** — never evaluated. Remove in Stage 6.
+- **Flow C pagination gap** — `@odata.nextLink` deferred. Close before Flow C is production-ready.
 
 ## Open questions
 
 - **Does `Create_OneNote_Page` use the same connector action tested in S0.1?** Gates Stage 5 path.
-- **Is S0.3 confirmed for the environment?** Gates Stage 7.
+- **What is the OneNote UpdatePageContent append action shape?** Need Peek Code on Flow B's existing update action before building Flow C step 10.
+- **Sainsbury's internal AI gateway endpoint and auth** — ask internal AI/tech team before wiring AI step.
 - **Do attendees appear in page content today?**
-- **Recurring-chat pagination gap** — open from 28 Aug, close before Flow C is production-ready.
 - **Fix 1 partial** — `Filter_Pages_By_Title` inside `Apply_to_each_Existing_Section` still has unguarded `formatDateTime` on `text_5`. Deferred.
 
 ## Working-method notes
@@ -95,6 +143,7 @@
 - `session-2026-08-31-stage-2-and-stage-4.md` — Stage 2 and Stage 4
 - `session-2026-08-31-stage-1-safety-net.md` — Stage 1
 - `design-2026-08-29-target-state-and-backlog.md` — operative planning document
+- `design-flow-c-chat-transcript-capture.md` — Flow C design (28 Aug baseline; 31 Aug decisions supersede where they conflict)
 - `known-good-values-master-reference.md` — Flow B reference (current as of Stage 1)
 - `known-good-values-flow-a-reference.md` — Flow A reference (needs Stage 3 additions)
 - `microsoft-discussion-brief-corruption-bug.md` — ready to submit
