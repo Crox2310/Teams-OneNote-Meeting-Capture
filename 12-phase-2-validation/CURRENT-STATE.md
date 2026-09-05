@@ -1,7 +1,10 @@
 # CURRENT STATE — Teams-OneNote Meeting Capture (start here)
 
-**Last updated:** 31 August 2026 (evening — Flow C design session)
+**Last updated:** 5 September 2026 (evening — corruption recurrence + new blocking defect, unresolved)
 **New Claude instance: read session notes first, most recent first.**
+
+**5 September (evening) — BLOCKING: live capture still not working. Two separate issues.**
+- `session-handover-2026-09-05-corruption-recurrence-and-oneoff-d2-badrequest.md` — (1) corruption recurred 3x in one session, including a new "value present but empty string" variant, and including re-corruption of already-restored actions — all restored, Flow Checker 0 errors, published. (2) Separate, apparently-genuine defect found on top: `Create_Page_OneOff` fails with BadRequest (`sectionId` invalid/empty) in the one-off fallback branch under `Condition_Is_Genuine_Existing_Page` (false branch). This branch contains two actions (`Set_varPageAction_Created_D2`, `Set_varOutputPageSelfUrl_Created_D2`) not present in `known-good-values-master-reference.md` — likely never exercised end-to-end before tonight. **Next session: start by checking `varTargetSectionPagesUrl`'s actual value at the point of failure in run history** before attempting a fix.
 
 **31 August (evening) — Flow C design decisions settled.**
 - Handoff doc (inline) — chat chain proven in scratch. Append-only confirmed. Four-section page template off the table. Internal AI gateway endpoint outstanding. See "Flow C design" section below.
@@ -27,9 +30,11 @@
 
 ## TL;DR
 
+**5 September — BLOCKED.** Corruption recurred and was restored (again — see incident log below), but a live capture still fails on a separate defect: the one-off "not a genuine existing page" fallback branch calls `Create_Page_OneOff` with an empty `sectionId`. This branch looks unexercised/unverified prior to tonight. Fix this before anything else.
+
 **31 August — four stages closed.** Stage 1 (safety net), Stage 2 (date in prompt), Stage 3 (second Flow A call removed), Stage 4 (struck). Flow A, Flow B, and Topic all published.
 
-**Next action: Flow C skeleton.** Full chain without AI step, hardcoded summary, gated against Supply Chain Product Team Meeting (Fri 29 Aug). Chat chain proven in PA - Scratch Diagnostics. Build order below.
+**Flow C work paused** behind the 5 September blocker — no point building on top of a capture path that doesn't complete yet.
 
 **Blocker for AI step:** Sainsbury's internal AI gateway endpoint and auth not yet confirmed. Ask internal AI/tech team: "What is the HTTP endpoint and auth method for calling Claude Sonnet or Opus from Power Automate?"
 
@@ -96,7 +101,8 @@
 
 | Stage | Item | Status |
 |---|---|---|
-| Flow C | Chat capture skeleton | Next — build order above |
+| **Blocking** | `Create_Page_OneOff` BadRequest, empty `sectionId`, one-off D2 fallback branch | **New 5 Sep — start next session here** |
+| Flow C | Chat capture skeleton | Blocked behind the above |
 | Flow C | AI step | Blocked on internal AI gateway endpoint |
 | Flow C | Copilot Studio Topic | After skeleton gated |
 | Stage 5 | Perceived latency | Not started |
@@ -106,9 +112,10 @@
 
 | Item | Priority | Notes |
 |---|---|---|
-| Microsoft support ticket | Overdue — please submit | `microsoft-discussion-brief-corruption-bug.md` |
-| Amendment log | Needs updating | 31 Aug Stage 2 and Stage 3 changes not yet logged |
+| Microsoft support ticket | Overdue — please submit | `microsoft-discussion-brief-corruption-bug.md` — 5 Sep session adds a strong new data point (same-session escalation incl. re-corruption of already-restored actions, plus a new empty-string value variant) not yet logged in the brief itself |
+| Amendment log | Needs updating | 31 Aug Stage 2 and Stage 3 changes, and 5 Sep corruption incidents, not yet logged |
 | `known-good-values-flow-a-reference.md` | Needs Stage 3 additions | FA12B and candidatesjson not yet documented |
+| `known-good-values-master-reference.md` | Needs D2 actions added | `Set_varPageAction_Created_D2` / `Set_varOutputPageSelfUrl_Created_D2` restored 5 Sep by inference only, not yet confirmed against a working run — do not treat as known-good until the blocking defect above is fixed and verified |
 
 ## New backlog items from 31 Aug
 
@@ -117,6 +124,11 @@
 - **FA11/FA12 dead code removal** — never evaluated. Remove in Stage 6.
 - **Flow C pagination gap** — `@odata.nextLink` deferred. Close before Flow C is production-ready.
 
+## New items from 5 Sep
+
+- **Designer load-timing hypothesis, unconfirmed** — reopening the flow shows action values as empty for a few seconds before populating. May explain some (not all) of tonight's Flow Checker/Peek Code false-blank reads. Proposed test (reopen, wait 20-30s untouched, then check) not yet run cleanly.
+- **`Set_varOutStatus` corruption variant** — value key retained but set to literal `""`, not removed. New pattern for the Microsoft brief.
+
 ## Open questions
 
 - **Does `Create_OneNote_Page` use the same connector action tested in S0.1?** Gates Stage 5 path.
@@ -124,6 +136,7 @@
 - **Sainsbury's internal AI gateway endpoint and auth** — ask internal AI/tech team before wiring AI step.
 - **Do attendees appear in page content today?**
 - **Fix 1 partial** — `Filter_Pages_By_Title` inside `Apply_to_each_Existing_Section` still has unguarded `formatDateTime` on `text_5`. Deferred.
+- **New 5 Sep — is `varTargetSectionPagesUrl` genuinely never set in the D2 fallback branch (design gap), or set then lost (corruption)?** Check run history before fixing.
 
 ## Working-method notes
 
@@ -134,19 +147,20 @@
 - Office 365 connector shape is flat — `start` is a plain string, no `start.dateTime`; no `onlineMeeting` object; no `type` field
 - `EndDialog` — confirmed valid in Copilot Studio Topic YAML
 - `PA - Scratch Diagnostics` — WDL expressions. `ZZ - Scratch ParseJSON Test` — Power Fx / Topic expressions
-- No dashes in action names — em-dashes suspected corruption trigger
+- No dashes in action names — em-dashes suspected corruption trigger (note: several existing OneOff-branch actions already use em-dashes, predating this rule — not yet retrofitted)
 - All contract changes additive
 
 ## Where to look
 
+- `session-handover-2026-09-05-corruption-recurrence-and-oneoff-d2-badrequest.md` — tonight's corruption incidents and the new blocking defect
 - `session-2026-08-31-stage-3-remove-second-flow-a-call.md` — Stage 3 detail, errors, gate
 - `session-2026-08-31-stage-2-and-stage-4.md` — Stage 2 and Stage 4
 - `session-2026-08-31-stage-1-safety-net.md` — Stage 1
 - `design-2026-08-29-target-state-and-backlog.md` — operative planning document
 - `design-flow-c-chat-transcript-capture.md` — Flow C design (28 Aug baseline; 31 Aug decisions supersede where they conflict)
-- `known-good-values-master-reference.md` — Flow B reference (current as of Stage 1)
+- `known-good-values-master-reference.md` — Flow B reference (current as of Stage 1; D2 actions pending confirmation)
 - `known-good-values-flow-a-reference.md` — Flow A reference (needs Stage 3 additions)
-- `microsoft-discussion-brief-corruption-bug.md` — ready to submit
+- `microsoft-discussion-brief-corruption-bug.md` — ready to submit, needs 5 Sep incident added first
 
 ---
 *Update at the end of each significant session.*
