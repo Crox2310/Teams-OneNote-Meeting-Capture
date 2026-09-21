@@ -6,7 +6,7 @@ The recurring platform-level corruption pattern (12+ incidents as of 7 September
 
 **This document covers Flow B** (`PA - Meeting Capture - B - Resolve OneNote Section`) and Flow C (`PA - Meeting Capture - C - Chat Capture`). Keep it current: update whenever an expression changes, before moving on.
 
-**Last verified against live flow:** 19 September 2026 (18 Sep addendum merged; 19 Sep Flow C restructure, Flow B UJ3b + existing-branch guard, Flow D offset change all documented).
+**Last verified against live flow:** 21 September 2026 (timezone fix, one-off meeting support, Flow D extensions).
 
 ---
 
@@ -19,6 +19,16 @@ The recurring platform-level corruption pattern (12+ incidents as of 7 September
 **18 Sep 2026:** EndTime and JoinUrl added to Flow B trigger and `Create_Mapping_Item_Recurring`. Flow D offset raised to 30 min. One-off fixed section URL added. Two new SetVariable values confirmed from Code view (`Set_varPageAction_UpdatedAppend` = `Updated`, `Set_varOutputPageLink_Existing` full expression).
 
 **19 Sep 2026:** Flow C fully restructured — AllowFallback removed, chat always runs, new actions added. Flow B FB-F01 renamed to `Evt Mtg -`. Flow B UJ3b and existing-branch guard added. Flow B Get items Top Count set to 500.
+
+**21 Sep 2026:**
+- **Timezone fix:** Flow A FA12B `End` field changed from `endWithTimeZone` to `end` (flat UTC string, V4 connector). `end` is a flat string — do NOT use `?['dateTime']` on it (fails with "property selection not supported on String"). Flow B `Create_Mapping_Item_Recurring` EndTime no longer strips `UTC|` prefix (removed `replace()` — now just `coalesce(triggerBody()?['text_6'], '')`). Confirmed: 14:30 BST stored as 13:30 UTC.
+- **Flow A corruption hit:** FA33A (`varCandidateDateListText`, value `@string('')`) and FA34A (`varCandidateIndex`, value `1`) wiped — restored.
+- **Flow B one-off PostItem (D2 branch):** `Create_Mapping_Item_OneOff` now writes OccurrenceDate, JoinUrl, EndTime (was missing all three). See updated SharePoint connector actions table.
+- **Flow B null guard:** `Set_varOutputPageLink_Existing` updated with null guard (see page creation/update table). `Set_varOutputPageSelfUrl_Existing` restored (was blank — corruption).
+- **Flow C trigger:** `text_3` (AllowFallback) and `text_4` (MeetingId) added. `text` (SeriesMasterId) made **optional** (not in required array) to support one-off meetings passing empty string.
+- **Flow C FC01:** filter now branches on empty SeriesMasterId — recurring uses `SeriesMasterId + OccurrenceDate`, one-off uses `MeetingId + OccurrenceDate`.
+- **Flow D one-off support:** FD04b (filter one-off rows), FD04c (union recurring + one-off), FD06 loops FD04c, FD06d passes all five inputs including `text_4` (MeetingId) and `text` as `coalesce(..., '')` to avoid null BadRequest.
+- **End-to-end confirmed:** Flow D automatically triggered Flow C for a one-off meeting; chat transcript appended to OneNote successfully.
 
 ---
 
@@ -76,9 +86,9 @@ The recurring platform-level corruption pattern (12+ incidents as of 7 September
 | `Set_varOutputPageSelfUrl_Created_OneOff` | `@outputs('Compose_PageSelfUrl_Created')` | 7 Sep |
 | `Set_varOutputPageLink_Created_OneOff_Gate` | `@outputs('Create_OneNote_Page')?['body']?['links']?['oneNoteWebUrl']?['href']` | 7 Sep |
 | `Set_varPageAction_ExistsNoCreate` | `Updated` (literal) | 7 Sep |
-| `Set_varOutputPageSelfUrl_Existing` | `@variables('varFinalExistingPageSelfUrl')` | 7 Sep |
+| `Set_varOutputPageSelfUrl_Existing` | `@variables('varFinalExistingPageSelfUrl')` | 21 Sep — restored after corruption |
 | `Set_varPageAction_UpdatedAppend` | `Updated` (literal) | 18 Sep — confirmed Code view |
-| `Set_varOutputPageLink_Existing` | `@first(coalesce(body('Filter_Existing_Mapping'), body('OF01_—_Filter_Existing_Mapping_OneOff'), createArray()))?['PageWebUrl']` | 18 Sep — confirmed Code view |
+| `Set_varOutputPageLink_Existing` | `@first(coalesce(body('Filter_Existing_Mapping'), body('OF01_—_Filter_Existing_Mapping_OneOff'), createArray()))?['PageWebUrl']` | 21 Sep — coalesce covers both recurring and one-off paths |
 | `Set_varOutputPageLink_Created_OneOff` | `@outputs('Create_Page_OneOff')?['body']?['links']?['oneNoteWebUrl']?['href']` | 7 Sep |
 | `Set_varTargetSectionPagesUrl_OneOffFixed` | `https://www.onenote.com/api/v1.0/myOrganization/siteCollections/b5f8860c-4772-4e8b-b340-e80ba9d490fa/sites/d814850f-59bb-4182-92b7-e25d8c6a0487/notes/sections/1-cbb5e863-2bd7-458f-9944-4fec9d20607b/pages` (text, not fx) | 18 Sep |
 
@@ -203,13 +213,23 @@ Note: prefix changed from `Mtg -` to `Evt Mtg -` on 19 Sep. Recurring meetings s
 
 ---
 
+## Flow A — Key actions (21 Sep 2026)
+
+| Action | Value | Last confirmed |
+|---|---|---|
+| `FA12B` `End` field | `@coalesce(item()?['end'], '')` | 21 Sep — `end` is a FLAT STRING on V4 connector, NOT nested; `item()?['end']?['dateTime']` fails |
+| `FA33A` Set varCandidateDateListText Empty | `@string('')` | 21 Sep — corruption-prone; restore if blank |
+| `FA34A` Set varCandidateIndex One | `1` (integer) | 21 Sep — corruption-prone; restore if blank |
+
+---
+
 ## Flow B — SharePoint connector actions
 
 | Action | Key parameters | Last confirmed |
 |---|---|---|
 | `Get_items` | dataset: `https://jsainsbury.sharepoint.com/sites/coplt`, table: `186b3c9f-e758-4e85-83d5-685946614a0a`, `$top`: 500 | 19 Sep |
-| `Create_Mapping_Item_Recurring` | PostItem — Title=Mapping, SeriesMasterId, MeetingTitle, SectionPagesUrl, Status/Value=Active, OccurrenceDate, JoinUrl=`@trim(coalesce(triggerBody()?['text_7'], ''))`, EndTime=`@replace(coalesce(triggerBody()?['text_6'], ''), 'UTC\|', '')` | 18 Sep |
-| `Create_Mapping_Item_OneOff` | PostItem — Title=Mapping, MeetingId, MeetingTitle, SectionPagesUrl, Status/Value=Active | 22 Aug |
+| `Create_Mapping_Item_Recurring` | PostItem — Title=Mapping, SeriesMasterId, MeetingTitle, SectionPagesUrl, Status/Value=Active, OccurrenceDate, JoinUrl=`@trim(coalesce(triggerBody()?['text_7'], ''))`, EndTime=`@coalesce(triggerBody()?['text_6'], '')` | 21 Sep — `replace('UTC\|','')` removed |
+| `Create_Mapping_Item_OneOff` | PostItem — Title=Mapping, MeetingId, MeetingTitle, SectionPagesUrl, Status/Value=Active, OccurrenceDate=`@triggerBody()?['text_5']`, JoinUrl=`@trim(coalesce(triggerBody()?['text_7'], ''))`, EndTime=`@coalesce(triggerBody()?['text_6'], '')` | 21 Sep — OccurrenceDate/JoinUrl/EndTime added |
 | `HTTP_Update_SP_PageSelfUrl` | MERGE, URI references `body('Create_Mapping_Item_Recurring')?['ID']` | 22 Aug |
 | `OF09b_—_HTTP_Update_SP_PageSelfUrl_(OneOff)` | MERGE, URI references `body('Create_Mapping_Item_OneOff')?['ID']` | 22 Aug |
 
@@ -230,17 +250,30 @@ Note: prefix changed from `Mtg -` to `Evt Mtg -` on 19 Sep. Recurring meetings s
 
 ---
 
-## Flow C — PA - Meeting Capture - C - Chat Capture (current as of 19 Sep)
+## Flow C — PA - Meeting Capture - C - Chat Capture (current as of 21 Sep)
 
-**Note:** AllowFallback trigger input removed 19 Sep. FC05d deleted. Chat always runs at main flow level.
+**Note:** AllowFallback trigger input removed 19 Sep. FC05d deleted. Chat always runs at main flow level. MeetingId (text_4) added 21 Sep for one-off meeting support. SeriesMasterId (text) made optional 21 Sep.
 
 ### Trigger inputs (current)
 
 | Key | Title | Required |
 |---|---|---|
-| `text` | SeriesMasterId | Yes |
+| `text` | SeriesMasterId | **No** (made optional 21 Sep — one-off meetings pass empty string) |
 | `text_1` | MeetingTitle | Yes |
 | `text_2` | OccurrenceDate | Yes |
+| `text_3` | AllowFallback | No |
+| `text_4` | MeetingId | No |
+
+### FC01 Get Mapping Row — filter (updated 21 Sep)
+
+Branches on whether SeriesMasterId is empty:
+
+```
+@if(empty(triggerBody()?['text']), concat('MeetingId eq ''', triggerBody()?['text_4'], ''' and OccurrenceDate eq ''', triggerBody()?['text_2'], ''''), concat('SeriesMasterId eq ''', triggerBody()?['text'], ''' and OccurrenceDate eq ''', triggerBody()?['text_2'], ''''))
+```
+
+- Empty SeriesMasterId → filter by MeetingId + OccurrenceDate (one-off path)
+- Populated SeriesMasterId → filter by SeriesMasterId + OccurrenceDate (recurring path)
 
 ### Key action values
 
@@ -248,7 +281,6 @@ Note: prefix changed from `Mtg -` to `Evt Mtg -` on 19 Sep. Recurring meetings s
 |---|---|---|
 | `FC00a_Compose_WindowStart` | `@startOfDay(triggerBody()?['text_2'])` | 19 Sep |
 | `FC00b_Compose_WindowEnd` | `@addDays(outputs('FC00a_Compose_WindowStart'), 1)` | 19 Sep |
-| `FC01_Get_Mapping_Row` `$filter` | `SeriesMasterId eq '@{triggerBody()?['text']}' and OccurrenceDate eq '@{triggerBody()?['text_2']}'` | 19 Sep |
 | `FC01_Get_Mapping_Row` `$top` | `1` | 19 Sep |
 | `FC02_Compose_JoinUrl` | `@first(body('FC01_Get_Mapping_Row')?['value'])?['JoinUrl']` | 19 Sep |
 | `FC03_Compose_PageSelfUrl` | `@first(body('FC01_Get_Mapping_Row')?['value'])?['PageSelfUrl']` | 19 Sep |
@@ -296,17 +328,22 @@ Note: prefix changed from `Mtg -` to `Evt Mtg -` on 19 Sep. Recurring meetings s
 
 ---
 
-## Flow D — PA - Meeting Capture - D - Auto Scheduler (current as of 19 Sep)
+## Flow D — PA - Meeting Capture - D - Auto Scheduler (current as of 21 Sep)
 
 | Action | Value | Last confirmed |
 |---|---|---|
-| `FD01` Init `varOffsetMinutes` | `30` (raised from 5 on 19 Sep) | 19 Sep |
+| `FD01` Init `varOffsetMinutes` | `30` | 19 Sep |
+| `FD04` filter where | `@and(not(equals(item()?['ChatCaptured'], true)), not(empty(coalesce(item()?['SeriesMasterId'], ''))), not(empty(coalesce(item()?['EndTime'], ''))))` | 21 Sep |
+| `FD04b` filter from | `@outputs('FD03_—_Get_Mapping_Rows')?['body/value']` | 21 Sep |
+| `FD04b` filter where | `@and(not(equals(item()?['ChatCaptured'], true)), empty(coalesce(item()?['SeriesMasterId'], '')), not(empty(coalesce(item()?['MeetingId'], ''))), not(empty(coalesce(item()?['EndTime'], ''))))` | 21 Sep |
+| `FD04c` Compose (union) | `@union(body('FD04_—_Filter_Uncaptured_Rows'), body('FD04b_—_Filter_OneOff_Rows'))` | 21 Sep |
+| `FD06` foreach | `@outputs('FD04c_—_Union_Rows')` | 21 Sep |
 | `FD06d_—_Run_Flow_C` workflowReferenceName | `7b295cc2-80a5-f111-b8de-7ced8d745465` | 18 Sep |
-| `FD06d` `text` | `@items('FD06_—_For_Each_Uncaptured_Row')?['SeriesMasterId']` | 18 Sep |
-| `FD06d` `text_1` | `@items('FD06_—_For_Each_Uncaptured_Row')?['MeetingTitle']` | 18 Sep |
-| `FD06d` `text_2` | `@items('FD06_—_For_Each_Uncaptured_Row')?['OccurrenceDate']` | 18 Sep |
-
-Note: `text_3` (AllowFallback) removed from FD06d on 19 Sep when AllowFallback trigger input was removed from Flow C.
+| `FD06d` `text` | `@coalesce(items('FD06_—_For_Each_Uncaptured_Row')?['SeriesMasterId'], '')` | 21 Sep — coalesce to '' avoids null BadRequest on one-off rows |
+| `FD06d` `text_1` | `@items('FD06_—_For_Each_Uncaptured_Row')?['MeetingTitle']` | 21 Sep |
+| `FD06d` `text_2` | `@items('FD06_—_For_Each_Uncaptured_Row')?['OccurrenceDate']` | 21 Sep |
+| `FD06d` `text_3` | `true` (literal) | 21 Sep |
+| `FD06d` `text_4` | `@items('FD06_—_For_Each_Uncaptured_Row')?['MeetingId']` | 21 Sep |
 
 ---
 
@@ -361,4 +398,4 @@ Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sain
 
 ---
 
-*Last updated 19 September 2026. Supersedes all prior versions. The 18 Sep addendum file is now redundant — this document is the single source of truth.*
+*Last updated 21 September 2026. Supersedes all prior versions.*
