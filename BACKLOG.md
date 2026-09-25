@@ -1,4 +1,3 @@
-
 # Backlog — Teams → OneNote Meeting Capture
 
 **Opened:** 22 Sep 2026, at the move from build to live field testing.
@@ -36,7 +35,7 @@
 | BL-31 | **Chat capped at 50 messages, no paging.** Busy meetings truncated. | Improve | L | R-12 | Document limit for now. |
 | BL-33 | **UJ3b delete failure blocks Flow B.** One delete fail = whole capture fails. | Bug | L | R-13 | Settings. Add Failed to run-after. |
 | BL-34 | **Re-capture appends full skeleton with misleading text.** | Bug | L | R-14 | Expr. Replace with header + datestamp. Session 2. |
-| BL-35 | **"Meeting Invite" heading always empty.** BodyPreview resolved in Flow A but never passed to Flow B. | Improve | L | R-08 | Topic expression. Low priority. |
+| BL-35 | **"Meeting Invite" section pulls no information — acceptance criteria too tight.** Review the Meeting Invite section's filtering: it should strip boilerplate only (disclaimers, dial-in legalese, standard footer text), not the actual meeting-relevant content from the invite body. Currently over-filters to empty. BodyPreview resolved in Flow A but never passed to Flow B — also still open. | Bug | M | Chat 25 Sep | Review the current filter/extraction logic against real invite bodies; loosen criteria to boilerplate-only removal. Combine with the still-open BodyPreview-not-passed-to-Flow-B gap. |
 | BL-14 | **Remove dead paths** (expanded): Flow B D2 branch; `Compose_SafeSectionName_D2`; FA15–FA26; FA10–FA12 loop; unused FA43 `endtime`; `Compose_IgnoreSeriesMasterId`; unbound `outpagehtml`/`outupdatehtmlfragment`; Topic C9B `PageTitle`; Flow C `AllowFallback`. | Tidy | L | F5 / R-16 | Struct. Only after several stable sessions; snapshot first. |
 | BL-15 | **Mixed OneNote connections and notebookKey paths.** Master Archive path is deliberate. | Tidy | L | Review minor | Document rather than change. |
 | BL-16 | **Clean-up:** delete PA - Slot Test flow, test pages; retire unused `iCalUId` column. | Tidy | L | Weekend plan D5 | |
