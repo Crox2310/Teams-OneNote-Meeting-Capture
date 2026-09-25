@@ -4,27 +4,29 @@
 
 Companion to `known-good-values-master-reference.md`, which covers Flow B only. This document covers **Flow A**. Created 23 August 2026 after Flow Checker found 2 corrupted actions in Flow A at session start — the first confirmed corruption incident in Flow A (previously only Flow B and Email Triage were affected).
 
-**Last verified against live flow:** 31 August 2026 (Stage 2 — `FA40_Compose_OutCandidateList_Multi` expression updated to prepend date header).
+**Last verified against live flow:** 25 September 2026 (BL-38 — capture status indicator added to candidate list).
 
 ---
 
-## Corruption incident — 23 August 2026 (session start) — RESOLVED
+## Corruption incidents
 
-**Symptom:** Flow Checker showed 2 operation errors on opening Flow A:
+### 23 August 2026 (session start) — RESOLVED
+**Symptom:** Flow Checker showed 2 operation errors:
 - `FA33A Set varCandidateListText Empty` — Parameter error: 'Value' is required.
 - `FA34A Set varCandidateIndex One` — Parameter error: 'Value' is required.
 
-**Fix applied and confirmed (23 Aug):**
+### 25 September 2026 (BL-38 build session) — RESOLVED TWICE
+FA34A wiped twice during the same session; FA33A wiped once. Both recovered using the values below. **These two actions are the highest-risk corruption targets in Flow A — check them first at every session start.**
+
+**Correct values (all incidents):**
 | Action | Correct value | Type |
 |---|---|---|
 | `FA33A_Set_varCandidateListText_Empty` | `@string('')` | string (expression) |
 | `FA34A_Set_varCandidateIndex_One` | `1` | integer literal |
 
-**Status:** ✅ Resolved.
-
 ---
 
-## Full flow structure (last verified 31 August 2026)
+## Full flow structure (last verified 25 September 2026)
 
 ### Trigger
 `Request` (Skills kind), schema fields: `text_1` (InSelectedNumber), `text_3` (DateContext). Both required.
@@ -73,11 +75,26 @@ Companion to `known-good-values-master-reference.md`, which covers Flow B only. 
 - `FA32_Compose_OutCandidateList_Single` → `@string('')`
 
 **Else (multi-match branch):**
-- `FA33A_Set_varCandidateListText_Empty` (SetVariable) → `varCandidateListText` = `@string('')` ✅ *corrected 23 Aug*
-- `FA34A_Set_varCandidateIndex_One` (SetVariable) → `varCandidateIndex` = `1` ✅ *corrected 23 Aug*
-- `FA35_Apply_to_each_CandidateArray_ForList` (Foreach over `@outputs('FA09C_Sort_CandidatesByStartTime')`):
-  - `FA36_Append_to_string_varCandidateListText` → `@concat(string(variables('varCandidateIndex')), '. ', coalesce(item()?['subject'], 'Untitled meeting'), decodeUriComponent('%0D%0A'))`
-  - `FA37_Increment_varCandidateIndex` → increment `varCandidateIndex` by `1`
+- `FA33A_Set_varCandidateListText_Empty` (SetVariable) → `varCandidateListText` = `@string('')` ✅ *corrected 23 Aug; wiped again 25 Sep — restore if blank*
+- `FA34A_Set_varCandidateIndex_One` (SetVariable) → `varCandidateIndex` = `1` ✅ *corrected 23 Aug; wiped TWICE 25 Sep — highest-risk action, check every session*
+- `FA-GetMappingRows` (GetItems, SharePoint) ✅ *added 25 Sep (BL-38)*:
+  - `dataset`: `https://jsainsbury.sharepoint.com/sites/coplt`
+  - `table`: `186b3c9f-e758-4e85-83d5-685946614a0a`
+  - `$filter`: `OccurrenceDate eq '@{formatDateTime(if(empty(trim(coalesce(variables('varDateContext'), ''))), utcNow(), variables('varDateContext')), 'yyyy-MM-dd')}'`
+  - `$top`: `50`
+  - `runAfter`: `FA34A_Set_varCandidateIndex_One: [Succeeded]`
+- `FA35_Apply_to_each_CandidateArray_ForList` (Foreach over `@outputs('FA09C_Sort_CandidatesByStartTime')`), `runAfter: FA-GetMappingRows`:
+  - `FA36a_Filter_MappingMatch` (Query/Filter Array) ✅ *added 25 Sep (BL-38)*:
+    - `from`: `@body('FA-GetMappingRows')?['value']`
+    - `where`: `@or(equals(item()?['SeriesMasterId'], coalesce(items('FA35_Apply_to_each_CandidateArray_ForList')?['seriesMasterId'], '')), equals(item()?['MeetingId'], coalesce(items('FA35_Apply_to_each_CandidateArray_ForList')?['id'], '')))`
+    - `runAfter`: *(none — runs first in loop)*
+  - `FA36b_Compose_StatusLabel` (Compose) ✅ *added 25 Sep (BL-38)*:
+    - `inputs`: `@if(equals(coalesce(first(body('FA36a_Filter_MappingMatch'))?['RecapCaptured'], false), true), ' - **Mtg Notes**', if(greater(length(body('FA36a_Filter_MappingMatch')), 0), ' - **Captured**', ''))`
+    - `runAfter`: `FA36a_Filter_MappingMatch: [SUCCEEDED]`
+  - `FA36_Append_to_string_varCandidateListText` ✅ *updated 25 Sep (BL-38)*:
+    - `inputs.value`: `@concat(string(variables('varCandidateIndex')), '. ', coalesce(item()?['subject'], 'Untitled meeting'), outputs('FA36b_Compose_StatusLabel'), decodeUriComponent('%0D%0A'))`
+    - `runAfter`: `FA36b_Compose_StatusLabel: [SUCCEEDED]`
+  - `FA37_Increment_varCandidateIndex` → increment `varCandidateIndex` by `1`, `runAfter`: `FA36: [Succeeded]`
 - `FA38_Compose_OutStatus_Multi` → `MULTIPLE_MATCHES`
 - `FA39_Compose_OutMatchCount_Multi` → `@string(outputs('FA13_Compose_MatchCount'))`
 - `FA40_Compose_OutCandidateList_Multi` → `@concat('Meetings for ', formatDateTime(variables('varDateContext'), 'ddd d MMM yyyy'), decodeUriComponent('%0D%0A'), variables('varCandidateListText'))` ✅ *updated 31 Aug — prepends date header*
@@ -119,4 +136,4 @@ Companion to `known-good-values-master-reference.md`, which covers Flow B only. 
 5. Update this doc's "Last verified" date if anything needed correcting.
 
 ---
-*Created 23 August 2026. Updated 31 August 2026 with FA40 date-header expression (Stage 2) and FA09B/FA09C additions (FR-02/FR-01, missed from original capture). Companion to `known-good-values-master-reference.md` (Flow B).*
+*Created 23 August 2026. Updated 31 August 2026 with FA40 date-header expression (Stage 2) and FA09B/FA09C additions. Updated 25 September 2026 with BL-38 new actions (FA-GetMappingRows, FA36a, FA36b, FA36 revised) and FA33A/FA34A second corruption incident note. Companion to `known-good-values-master-reference.md` (Flow B).*
