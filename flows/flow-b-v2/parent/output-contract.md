@@ -1,9 +1,9 @@
 # Flow B v2 Parent — Output Contract
 
 **Locked:** 26 September 2026
-**Constraint:** BYTE-IDENTICAL keys to Flow B v1 `Respond to the Agent`. Verified against live v1 Response node (20 fields).
+**Constraint:** BYTE-IDENTICAL keys to Flow B v1 `Respond to the agent` (Skills Response). Verified against live v1 Response node (20 fields).
 
-All fields `type: string`, `statusCode: 200`, key order preserved as v1.
+All fields `type: string`, `statusCode: 200`, key order preserved as v1. The parent's terminal action is the Skills **"Respond to the agent"** — not "Respond to a PowerApp or Flow."
 
 ## Field ownership
 
@@ -36,16 +36,21 @@ Four fields are pure trigger echoes and are owned by the **parent** (it already 
 
 ## Relay binding pattern
 
-Only one child ever runs. For each child-owned field:
+The two child-call actions are `RT03a_Run_Recurring_Child` and `RT03b_Run_OneOff_Child` (in `Scope_Router`). Only one runs; the skipped one's body is null. For each of the 16 child-owned fields, with a `''` terminal fallback so the error path never emits literal null:
 ```
-@{coalesce(body('RL_Call_Recurring')?['<key>'], body('RL_Call_OneOff')?['<key>'])}
+@{coalesce(body('RT03a_Run_Recurring_Child')?['<key>'], body('RT03b_Run_OneOff_Child')?['<key>'], '')}
 ```
-The skipped branch's action returns null; coalesce selects the populated one.
+This coalesce-across-branches is the same pattern v1 already uses (e.g. `Set_varOutputPageLink_Existing`).
 
 ## Graceful child-failure (Decision 3)
 
-`outstatus` carries a terminal `'ERROR'` fallback so a failed/absent child body still yields a clean status:
+`outstatus` uses a terminal `'ERROR'` (not `''`) so a failed/absent child still yields a routable status:
 ```
-@{coalesce(body('RL_Call_Recurring')?['outstatus'], body('RL_Call_OneOff')?['outstatus'], 'ERROR')}
+@{coalesce(body('RT03a_Run_Recurring_Child')?['outstatus'], body('RT03b_Run_OneOff_Child')?['outstatus'], 'ERROR')}
 ```
-The relay Scope runs after the router Scope with runAfter = [`Succeeded`, `Failed`] so a child failure inside the Condition does not abort the parent before the Respond. Parent-echo fields still populate from the trigger on the error path.
+`Scope_Relay` runs after `Scope_Router` with runAfter = [`Succeeded`, `Failed`] so a child failure inside the Condition does not abort the parent before the Response. Parent-echo fields still populate from the trigger on the error path.
+
+## Byte-fidelity notes (reproduce v1 expression *form*, not just intent)
+
+- **`outpageroute`** — v1 = `@{equals(variables('varFinalPageDecision'), 'PAGE_EXISTS')}` (boolean string-interpolated). The child must interpolate the boolean the same way, `@{equals(outputs('<PageDecision>'), 'PAGE_EXISTS')}`, so the casing v1 emits is preserved — do **not** substitute a reworded `string()` that might differ in case.
+- **`outspitemcount`** — v1 = `@{int(coalesce(outputs('Compose_SP_Item_Count'), 0))}` (int interpolated to string). Reproduce the `int(coalesce(..., 0))` form.

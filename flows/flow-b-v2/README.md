@@ -12,15 +12,19 @@ Flow B v1 (`PA - Meeting Capture - B - Resolve OneNote Section`) carries the who
 
 v2 splits into **one lightweight parent** and **two purpose-built children**:
 
-- The **parent** keeps the v1 trigger byte-identical, routes on `empty(SeriesMasterId)`, calls one child, relays the child output back unchanged. No SharePoint, no OneNote, no variables.
+- The **parent** keeps the v1 trigger byte-identical, routes on `empty(SeriesMasterId)`, calls one child, relays the child output back unchanged. No SharePoint, no OneNote, no variables. Skills trigger + Skills "Respond to the agent" (unchanged from v1).
 - The **recurring child** keeps the full section-resolution + mapping logic.
 - The **one-off child** is much lighter: the fixed One-Off Meetings section removes all section resolution.
 
-Both children return an **identical 16-field output**, so the parent is a pure pass-through.
+Both children are PowerAppV2-triggered, end in "Respond to a PowerApp or Flow", and return an **identical 16-field output**, so the parent is a pure pass-through.
 
 ### Central refactor — zero SetVariable, zero accumulation loops
 
-Every v1 pattern of *Apply-to-each over a single-row filter result → SetVariable* collapses to `first(body('Filter_...'))?['field']` in a Compose. Ambiguity (>1 match) is detected with `length()`, not by looping. Target state per flow: **zero SetVariable, zero accumulation loops, ideally zero InitializeVariable.** If any InitializeVariable proves unavoidable it goes top-level, before the outer Scope (platform constraint: InitializeVariable cannot nest in a Scope or Condition).
+Every v1 pattern of *Apply-to-each over a single-row filter result → SetVariable* collapses to `first(body('Filter_...'))?['field']` in a Compose. Ambiguity (>1 match) is detected with `length()`, not by looping. Target state per flow: **zero SetVariable, zero accumulation loops, ideally zero InitializeVariable.** If any InitializeVariable proves unavoidable it goes top-level, before the outer Scope (platform constraint: InitializeVariable cannot nest).
+
+### Trigger inputs re-exposed as Composes (corruption + remap safety)
+
+Each child renumbers its trigger keys, so v1 `text_5` (OccurrenceDate) becomes a child `text_5` meaning something else (JoinUrl). To kill that silent-remap trap, every child's Normalize scope re-exposes each trigger input as a named Compose (`NZ00a..`) at the very top, and **all** downstream expressions reference the Compose, never a raw `triggerBody()?['text_N']`. Port v1 logic by action-name, not by key number.
 
 ---
 
@@ -38,13 +42,23 @@ The one-off child shares nothing with the recurring child except the output cont
 
 ## Decisions taken (defaults, 26 Sep 2026)
 
-1. **Route on `empty(SeriesMasterId)`** (`empty(triggerBody()?['text_2'])`). `IsRecurring` (`text`) is vestigial *for routing* and dropped from both child trigger contracts. It is still echoed faithfully in the parent output (`outisrecurring`).
+1. **Route on `empty(SeriesMasterId)`** (`empty(triggerBody()?['text_2'])`). `IsRecurring` (`text`) is vestigial *for routing* and dropped from both child trigger contracts. Still echoed faithfully in the parent output (`outisrecurring`).
 2. **Uniform 16-field child output contract**; parent is a pure pass-through relay.
-3. **Graceful child-failure handling** — parent relay coalesces a failed/absent child body to `outstatus = 'ERROR'` so the Topic always receives a clean status.
-4. **Write-back only on new page / new mapping row.** A pure append to an already-mapped page does not re-MERGE `JoinUrl`/`EndTime`. (Confirm against v1 during build.)
-5. **`STALE_MAPPING` kept in the one-off status enum** for uniformity, though it is judged unreachable there (fixed section always recovers via create).
-6. **Recurring section prefix `Mtg -`** (per 21 Sep known-good). `Rec -` rename not confirmed shipped; lock to live value at build time.
-7. **`outbranchresult` replicates the v1 binding** (bound to match count) for zero switchover behaviour change. Rebinding to a real branch label is a separate follow-up; keys stay locked either way, so a value fix cannot break C10.
+3. **Graceful child-failure handling** — parent relay coalesces a failed/absent child body to `outstatus = 'ERROR'`.
+4. **Write-back on any page CREATE** (new occurrence *or* recovery-created page on an existing mapping), targeting the resolved row ID. Not on a pure append. (Refined during the 26 Sep recheck — see finding below.)
+5. **`STALE_MAPPING` kept in the one-off status enum** for uniformity, though unreachable (fixed section never blank).
+6. **Recurring section prefix `Mtg -`** — confirmed live 26 Sep.
+7. **`outbranchresult` replicates the v1 binding** (mirrors match count) for zero switchover behaviour change.
+
+---
+
+## Findings from the 26 Sep recheck (all folded into the locked files)
+
+- **STALE_MAPPING was a v1 bug**, not a feature: the existing-section guard never set a page action, so successful existing-section captures were mislabelled `STALE_MAPPING`. v2 records `outpageaction` on every path and redefines `STALE_MAPPING` as a genuine stale row (matched mapping, blank `SectionPagesUrl` — the UJ3b condition). Confirm the Topic's user-facing message for STALE vs SUCCESS before switchover.
+- **Trigger-key renumbering trap** — neutralised by the Normalize input-Compose rule above.
+- **Response kind** — parent = Skills "Respond to the agent"; children = "Respond to a PowerApp or Flow." Do not mix.
+- **Relay null-safety** — the 16 relay fields carry a `''` terminal fallback; `outstatus` carries `'ERROR'`.
+- **Two open confirmations for the build session:** (a) the recovery-create write-back fix (Decision 4 refined — v1 doesn't do it); (b) `Compose_AgentResponseSummary`'s expression must be pulled from live v1 (not in the known-good reference; may be user-facing).
 
 ---
 
@@ -80,7 +94,8 @@ Outer Scope names: `Scope_FlowB_Parent`, `Scope_FlowB_Recurring`, `Scope_FlowB_O
 ## Build sequencing
 
 1. **Now (Opus):** contracts + Scope maps locked (this folder). ✔
-2. **Sonnet, per flow, in any order** — one-off child and recurring child are independent. Suggested: parent → one-off (simplest, proves the child-flow plumbing) → recurring.
-3. Push each Scope's Peek Code to `scope-peek-codes/` immediately after it confirms green.
+2. **Sonnet, per flow** — one-off and recurring are independent. Suggested: parent → one-off (simplest, proves the child-flow plumbing) → recurring.
+3. **Before the recurring build:** pull the full v1 recurring-branch Peek Code (structure/runAfter, not just values) and `Compose_AgentResponseSummary`.
+4. Push each Scope's Peek Code to `scope-peek-codes/` immediately after it confirms green.
 
-**Child-flow plumbing prerequisite (both children):** PowerAppV2 trigger + terminal Respond action + "Use this connection" set for every connector in Run-only-users + child must be solution-aware to appear in the Run-a-Child-Flow picker.
+**Child-flow plumbing prerequisite (both children):** PowerAppV2 trigger + terminal "Respond to a PowerApp or Flow" + "Use this connection" set for every connector in Run-only-users + child must be solution-aware to appear in the Run-a-Child-Flow picker.

@@ -5,7 +5,9 @@
 
 ## Trigger type
 
-Unchanged from v1 (the Copilot-invoked flow trigger). **Do NOT convert the parent to PowerAppV2** — that would break C10's invoke binding. Only the internals of the flow change; the trigger keys, titles, required flags, and trigger type are frozen.
+Unchanged from v1. v1 is the Copilot Studio **Skills** trigger (confirmed: the v1 Response node is `"kind": "Skills"`) — the "When Copilot Studio calls a flow" trigger, returning via the Skills **"Respond to the agent"** action. **Do NOT convert the parent to PowerAppV2** — that would break C10's invoke binding. Trigger keys, titles, required flags, trigger kind, and the Skills Response are all frozen; only the flow internals change.
+
+(The two children, by contrast, use the PowerAppV2 trigger + "Respond to a PowerApp or Flow" — required for Run-a-Child-Flow. Do not confuse the two response kinds.)
 
 ## Input fields (LOCKED — do not touch)
 
@@ -40,3 +42,5 @@ Split condition: `@empty(triggerBody()?['text_2'])`
 | `text_5` (OccurrenceDate) | `text_2` | `text_2` |
 | `text_6` (EndTime) | `text_4` | `text_4` |
 | `text_7` (JoinUrl) | `text_5` | `text_5` |
+
+⚠ **The keys renumber.** v1 `text_5` = OccurrenceDate but recurring-child `text_5` = JoinUrl. Ported v1 expressions must be remapped — see each child's trigger contract and the Normalize input-Compose rule.

@@ -18,8 +18,8 @@ Responsibility: derive the route once, branch, call exactly one child.
 
 ### Inner Scope: `Scope_Relay` (RL)
 Responsibility: assemble the 20-field v1 output shape and respond. runAfter `Scope_Router` = [`Succeeded`, `Failed`] (Decision 3).
-- `RL01..` Compose relays — four parent echoes direct from trigger; sixteen child-relay fields via coalesce across the two child-call actions (see output-contract.md).
-- `RL_Respond` — Respond to the Agent, byte-identical 20 keys, `statusCode: 200`.
+- `RL01..` Compose relays — four parent echoes direct from trigger; sixteen child-relay fields via coalesce across `RT03a_Run_Recurring_Child` / `RT03b_Run_OneOff_Child` with `''` fallback (see output-contract.md).
+- `RL_Respond` — **Skills "Respond to the agent"** (matching v1's `kind: Skills`), byte-identical 20 keys, `statusCode: 200`. NOT "Respond to a PowerApp or Flow."
 
 ## Branch selector — `RT02 Condition Route`
 ```
@@ -29,4 +29,4 @@ Responsibility: assemble the 20-field v1 output shape and respond. runAfter `Sco
 - **False** ⇒ `RT03a Run Recurring Child`
 
 ## Peek Code strategy
-One outer `Scope_FlowB_Parent` pull covers the entire flow (it is small enough that phase-level pulls are rarely needed). Session start: open, wait 20s, Flow Checker, Peek Code outer Scope, cross-reference known-good.
+One outer `Scope_FlowB_Parent` pull covers the entire flow. Session start: open, wait 20s, Flow Checker, Peek Code outer Scope, cross-reference known-good.
