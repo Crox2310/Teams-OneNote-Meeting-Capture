@@ -19,10 +19,10 @@ The fixed-section decision means the section-related fields are **constants**, n
 | `outexistingpageselfurl` | existing page self-URL Compose (or `''`) |
 | `outpagedecision` | `PAGE_EXISTS` / `PAGE_NOT_FOUND` |
 | `outpageroute` | `@string(equals(outputs('..PageDecision..'), 'PAGE_EXISTS'))` |
-| `outpageaction` | `Created` / `Updated` / `UpdatedAppend` / `''` |
+| `outpageaction` | `Created` / `Updated` / `UpdatedAppend` / `''` — recorded on every capture path |
 | `outupdatehtmlfragment` | Normalize Compose |
 | `outagentresponsesummary` | Status Compose |
 | `outstatus` | Status Compose (enum below) |
 
 ## `outstatus` reachable enum (one-off)
-`SUCCESS` · `PARTIAL_SUCCESS` · `ERROR` — plus `STALE_MAPPING` kept in the enum for uniformity (Decision 5) though judged unreachable (fixed section always recovers via create). `SETUP_SECTION_*` and `RECURRING_SETUP_REQUIRED` cannot occur — no section resolution, not recurring.
+`SUCCESS` · `PARTIAL_SUCCESS` · `ERROR` — plus `STALE_MAPPING` kept in the enum for uniformity (Decision 5) though **unreachable**: the stale test is `@empty(coalesce(first(...)?['SectionPagesUrl'], ''))`, but the one-off target section is the fixed constant URL and is never blank, so the condition cannot trip. `SETUP_SECTION_*` and `RECURRING_SETUP_REQUIRED` cannot occur — no section resolution, not recurring.
