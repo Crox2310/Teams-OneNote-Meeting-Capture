@@ -1,0 +1,357 @@
+{
+  "meta": {
+    "flow": "PA - Meeting Capture - B - v3",
+    "flowId": "c5d60154-68bb-f111-aaaf-002248a25cfd",
+    "stage": "Stage 2 - SectionResolve + PageResolve added",
+    "date": "2026-10-01",
+    "status": "All notebook paths corrected to personal Meeting Notes. Page title still Untitled - Option B pending after notebook test passes.",
+    "notes": "SR06a uses custom value entry for notebookKey to avoid dropdown defaulting to Master Archive. PG11 pageContent still has p-wrapper - Designer enforces this. Option B (remove HTML wrapper from NZ07) on backlog if title test fails."
+  },
+  "Scope_Normalize": {
+    "type": "Scope",
+    "actions": {
+      "NZ01_Compose_IsRecurring": {
+        "type": "Compose",
+        "inputs": "@if(empty(trim(coalesce(triggerBody()?['text_1'], ''))), 'false', 'true')"
+      },
+      "NZ02_Compose_MappingKey": {
+        "type": "Compose",
+        "inputs": "@if(equals(outputs('NZ01_Compose_IsRecurring'), 'true'), triggerBody()?['text_1'], triggerBody()?['text_6'])",
+        "runAfter": { "NZ01_Compose_IsRecurring": ["SUCCEEDED"] }
+      },
+      "NZ03_Compose_SectionName": {
+        "type": "Compose",
+        "inputs": "@if(equals(outputs('NZ01_Compose_IsRecurring'), 'true'), if(empty(trim(coalesce(triggerBody()?['text'], ''))), 'Mtg - Untitled Meeting', concat('Mtg - ', substring(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '\"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', ''), 0, min(43, length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '/', '-'), ':', '-'), '&', 'and'), '?', ''), '*', ''), '<', ''), '>', ''), '\"', ''), '|', ''), '#', ''), '''', ''), '%', ''), '~', '')))))), 'One Off meetings')",
+        "runAfter": { "NZ02_Compose_MappingKey": ["SUCCEEDED"] }
+      },
+      "NZ04_Compose_OccurrenceDateDisplay": {
+        "type": "Compose",
+        "inputs": "@if(empty(trim(coalesce(triggerBody()?['text_2'], ''))), '', formatDateTime(triggerBody()?['text_2'], 'd MMM yyyy'))",
+        "runAfter": { "NZ03_Compose_SectionName": ["SUCCEEDED"] }
+      },
+      "NZ05_Compose_PageTitle": {
+        "type": "Compose",
+        "inputs": "@concat(if(empty(outputs('NZ04_Compose_OccurrenceDateDisplay')), '', concat(outputs('NZ04_Compose_OccurrenceDateDisplay'), ' - ')), if(empty(trim(coalesce(triggerBody()?['text'], ''))), 'Untitled Meeting', substring(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '&', 'and'), '<', ''), '>', ''), '\"', ''), 0, min(150, length(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '&', 'and'), '<', ''), '>', ''), '\"', ''))))))",
+        "runAfter": { "NZ04_Compose_OccurrenceDateDisplay": ["SUCCEEDED"] }
+      },
+      "NZ06_Compose_LegacyPageTitle": {
+        "type": "Compose",
+        "inputs": "@concat(if(empty(trim(coalesce(triggerBody()?['text'], ''))), 'Untitled Meeting', substring(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '&', 'and'), '<', ''), '>', ''), '\"', ''), 0, min(150, length(replace(replace(replace(replace(coalesce(triggerBody()?['text'], ''), '&', 'and'), '<', ''), '>', ''), '\"', ''))))), if(empty(outputs('NZ04_Compose_OccurrenceDateDisplay')), '', concat(' - ', outputs('NZ04_Compose_OccurrenceDateDisplay'))))",
+        "runAfter": { "NZ05_Compose_PageTitle": ["SUCCEEDED"] }
+      },
+      "NZ07_Compose_PageHtmlDocument": {
+        "type": "Compose",
+        "inputs": "@concat('<html><head><title>', outputs('NZ05_Compose_PageTitle'), '</title></head><body>', coalesce(triggerBody()?['text_3'], ''), '</body></html>')",
+        "runAfter": { "NZ06_Compose_LegacyPageTitle": ["SUCCEEDED"] }
+      },
+      "NZ08_Compose_UpdateHtmlFragment": {
+        "type": "Compose",
+        "inputs": "@concat('<hr><h2>Automated update</h2><p><strong>Updated by:</strong> Meeting Capture Agent</p><p><strong>Update note:</strong> Meeting details were refreshed by the automation. Existing human-entered notes were preserved below.</p>', coalesce(triggerBody()?['text_3'], ''))",
+        "runAfter": { "NZ07_Compose_PageHtmlDocument": ["SUCCEEDED"] }
+      },
+      "NZ09_Compose_NotebookPath": {
+        "type": "Compose",
+        "inputs": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes",
+        "runAfter": { "NZ08_Compose_UpdateHtmlFragment": ["SUCCEEDED"] }
+      },
+      "NZ10_Compose_Inputs_Valid": {
+        "type": "Compose",
+        "inputs": "@and(not(empty(trim(coalesce(triggerBody()?['text_2'], '')))), not(empty(trim(coalesce(outputs('NZ02_Compose_MappingKey'), '')))))",
+        "runAfter": { "NZ09_Compose_NotebookPath": ["SUCCEEDED"] }
+      }
+    },
+    "runAfter": {}
+  },
+  "Scope_MappingLookup": {
+    "type": "Scope",
+    "actions": {
+      "ML01_Get_Mapping_Items": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "parameters": {
+            "dataset": "https://jsainsbury.sharepoint.com/sites/coplt",
+            "table": "186b3c9f-e758-4e85-83d5-685946614a0a",
+            "$filter": "@if(equals(outputs('NZ01_Compose_IsRecurring'), 'true'), concat('SeriesMasterId eq ''', outputs('NZ02_Compose_MappingKey'), ''' and OccurrenceDate eq ''', triggerBody()?['text_2'], ''''), concat('MeetingId eq ''', outputs('NZ02_Compose_MappingKey'), ''' and OccurrenceDate eq ''', triggerBody()?['text_2'], ''''))",
+            "$top": 2
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+            "connection": "shared_sharepointonline",
+            "operationId": "GetItems"
+          }
+        }
+      },
+      "ML02_Compose_Match_Count": {
+        "type": "Compose",
+        "inputs": "@length(body('ML01_Get_Mapping_Items')?['value'])",
+        "runAfter": { "ML01_Get_Mapping_Items": ["SUCCEEDED"] }
+      },
+      "ML03_Compose_Mapping_Exists": {
+        "type": "Compose",
+        "inputs": "@greater(outputs('ML02_Compose_Match_Count'), 0)",
+        "runAfter": { "ML02_Compose_Match_Count": ["SUCCEEDED"] }
+      },
+      "ML04_Compose_Mapping_Row_Count_Diagnostic": {
+        "type": "Compose",
+        "inputs": "@string(outputs('ML02_Compose_Match_Count'))",
+        "runAfter": { "ML03_Compose_Mapping_Exists": ["SUCCEEDED"] }
+      }
+    },
+    "runAfter": { "Scope_Normalize": ["SUCCEEDED"] }
+  },
+  "Scope_SectionResolve": {
+    "type": "Scope",
+    "actions": {
+      "SR00_Compose_Cached_Section_Url": {
+        "type": "Compose",
+        "inputs": "@trim(coalesce(outputs('EM04_Compose_Existing_Section_Pages_Url'), ''))"
+      },
+      "SR00b_Condition_Section_Url_Cached": {
+        "type": "If",
+        "expression": {
+          "and": [
+            { "equals": ["@empty(outputs('SR00_Compose_Cached_Section_Url'))", false] },
+            { "equals": ["@startsWith(outputs('SR00_Compose_Cached_Section_Url'), 'https://')", true] },
+            { "equals": ["@contains(outputs('SR00_Compose_Cached_Section_Url'), '/onenote/sections/')", true] }
+          ]
+        },
+        "actions": {
+          "SR01a_Compose_Target_Section_Pages_Url": {
+            "type": "Compose",
+            "inputs": "@outputs('SR00_Compose_Cached_Section_Url')"
+          },
+          "SR01b_Compose_Section_Resolver_Result": {
+            "type": "Compose",
+            "inputs": "CachedSection",
+            "runAfter": { "SR01a_Compose_Target_Section_Pages_Url": ["SUCCEEDED"] }
+          }
+        },
+        "else": {
+          "actions": {
+            "SR02_Get_Sections": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_onenote",
+                  "connection": "shared_onenote",
+                  "operationId": "GetSectionsInNotebook"
+                }
+              }
+            },
+            "SR03_Filter_Section_By_Name": {
+              "type": "Query",
+              "inputs": {
+                "from": "@outputs('SR02_Get_Sections')?['body/value']",
+                "where": "@equals(item()?['name'], outputs('NZ03_Compose_SectionName'))"
+              },
+              "runAfter": { "SR02_Get_Sections": ["SUCCEEDED"] }
+            },
+            "SR04_Compose_Section_Match_Count": {
+              "type": "Compose",
+              "inputs": "@length(body('SR03_Filter_Section_By_Name'))",
+              "runAfter": { "SR03_Filter_Section_By_Name": ["SUCCEEDED"] }
+            },
+            "SR05_Condition_Section_Exists": {
+              "type": "If",
+              "expression": {
+                "and": [{ "equals": ["@outputs('SR04_Compose_Section_Match_Count')", 0] }]
+              },
+              "actions": {
+                "SR06a_Create_Section": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "body/name": "@outputs('NZ03_Compose_SectionName')",
+                      "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_onenote",
+                      "connection": "shared_onenote",
+                      "operationId": "CreateSectionInNotebook"
+                    }
+                  }
+                },
+                "SR06b_Compose_Resolved_Section_Pages_Url": {
+                  "type": "Compose",
+                  "inputs": "@outputs('SR06a_Create_Section')?['body']?['pagesUrl']",
+                  "runAfter": { "SR06a_Create_Section": ["SUCCEEDED"] }
+                },
+                "SR06c_Compose_Section_Resolver_Result": {
+                  "type": "Compose",
+                  "inputs": "CreatedSection",
+                  "runAfter": { "SR06b_Compose_Resolved_Section_Pages_Url": ["SUCCEEDED"] }
+                }
+              },
+              "else": {
+                "actions": {
+                  "SR07a_Compose_Resolved_Section_Pages_Url": {
+                    "type": "Compose",
+                    "inputs": "@first(body('SR03_Filter_Section_By_Name'))?['pagesUrl']"
+                  },
+                  "SR07b_Compose_Section_Resolver_Result": {
+                    "type": "Compose",
+                    "inputs": "ExistingSection",
+                    "runAfter": { "SR07a_Compose_Resolved_Section_Pages_Url": ["SUCCEEDED"] }
+                  }
+                }
+              },
+              "runAfter": { "SR04_Compose_Section_Match_Count": ["SUCCEEDED"] }
+            }
+          }
+        },
+        "runAfter": { "SR00_Compose_Cached_Section_Url": ["SUCCEEDED"] }
+      },
+      "SR08_Compose_Target_Section_Pages_Url_Final": {
+        "type": "Compose",
+        "inputs": "@coalesce(outputs('SR01a_Compose_Target_Section_Pages_Url'), outputs('SR06b_Compose_Resolved_Section_Pages_Url'), outputs('SR07a_Compose_Resolved_Section_Pages_Url'), '')",
+        "runAfter": { "SR00b_Condition_Section_Url_Cached": ["SUCCEEDED"] }
+      },
+      "SR09_Compose_Section_Resolver_Result_Final": {
+        "type": "Compose",
+        "inputs": "@coalesce(outputs('SR01b_Compose_Section_Resolver_Result'), outputs('SR06c_Compose_Section_Resolver_Result'), outputs('SR07b_Compose_Section_Resolver_Result'), '')",
+        "runAfter": { "SR08_Compose_Target_Section_Pages_Url_Final": ["SUCCEEDED"] }
+      }
+    },
+    "runAfter": { "Scope_MappingWrite": ["SUCCEEDED"] }
+  },
+  "Scope_PageResolve": {
+    "type": "Scope",
+    "actions": {
+      "PG00_Compose_Target_Section_Pages_Url": {
+        "type": "Compose",
+        "inputs": "@if(empty(outputs('SR08_Compose_Target_Section_Pages_Url_Final')), '', outputs('SR08_Compose_Target_Section_Pages_Url_Final'))"
+      },
+      "PG01_Get_Pages_In_Section": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "parameters": {
+            "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes",
+            "sectionId": "@outputs('PG00_Compose_Target_Section_Pages_Url')"
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_onenote",
+            "connection": "shared_onenote",
+            "operationId": "GetPagesInSection"
+          }
+        },
+        "runAfter": { "PG00_Compose_Target_Section_Pages_Url": ["SUCCEEDED"] }
+      },
+      "PG02_Filter_Pages_By_Title": {
+        "type": "Query",
+        "inputs": {
+          "from": "@outputs('PG01_Get_Pages_In_Section')?['body']?['value']",
+          "where": "@if(equals(outputs('NZ01_Compose_IsRecurring'), 'true'), contains(toLower(trim(coalesce(item()?['title'], ''))), toLower(outputs('NZ04_Compose_OccurrenceDateDisplay'))), or(equals(toLower(trim(coalesce(item()?['title'], ''))), toLower(outputs('NZ05_Compose_PageTitle'))), equals(toLower(trim(coalesce(item()?['title'], ''))), toLower(outputs('NZ06_Compose_LegacyPageTitle')))))"
+        },
+        "runAfter": { "PG01_Get_Pages_In_Section": ["SUCCEEDED"] }
+      },
+      "PG03_Compose_Page_Match_Count": {
+        "type": "Compose",
+        "inputs": "@length(body('PG02_Filter_Pages_By_Title'))",
+        "runAfter": { "PG02_Filter_Pages_By_Title": ["SUCCEEDED"] }
+      },
+      "PG04_Compose_Page_Decision": {
+        "type": "Compose",
+        "inputs": "@if(greater(outputs('PG03_Compose_Page_Match_Count'), 0), 'PAGE_EXISTS', 'PAGE_NOT_FOUND')",
+        "runAfter": { "PG03_Compose_Page_Match_Count": ["SUCCEEDED"] }
+      },
+      "PG05_Condition_Page_Exists": {
+        "type": "If",
+        "expression": {
+          "and": [{ "equals": ["@outputs('PG04_Compose_Page_Decision')", "PAGE_EXISTS"] }]
+        },
+        "actions": {
+          "PG06_Compose_Existing_Page_Id": {
+            "type": "Compose",
+            "inputs": "@first(body('PG02_Filter_Pages_By_Title'))?['id']"
+          },
+          "PG07_Update_Page_Content": {
+            "type": "OpenApiConnection",
+            "inputs": {
+              "parameters": {
+                "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes",
+                "sectionId": "@outputs('PG00_Compose_Target_Section_Pages_Url')",
+                "pageId": "@outputs('PG06_Compose_Existing_Page_Id')",
+                "updates": [{ "target": "body", "action": "append", "content": "@outputs('NZ08_Compose_UpdateHtmlFragment')" }]
+              },
+              "host": {
+                "apiId": "/providers/Microsoft.PowerApps/apis/shared_onenote",
+                "connection": "shared_onenote",
+                "operationId": "UpdatePageContent"
+              }
+            },
+            "runAfter": { "PG06_Compose_Existing_Page_Id": ["SUCCEEDED"] }
+          },
+          "PG08_Compose_Page_Action": {
+            "type": "Compose",
+            "inputs": "UpdatedAppend",
+            "runAfter": { "PG07_Update_Page_Content": ["SUCCEEDED"] }
+          },
+          "PG09_Compose_Output_Page_Link": {
+            "type": "Compose",
+            "inputs": "@coalesce(first(body('PG02_Filter_Pages_By_Title'))?['links']?['oneNoteWebUrl']?['href'], outputs('EM03_Compose_Existing_Page_Web_Url'), '')",
+            "runAfter": { "PG08_Compose_Page_Action": ["SUCCEEDED"] }
+          },
+          "PG10_Compose_Output_Page_Self_Url": {
+            "type": "Compose",
+            "inputs": "@coalesce(first(body('PG02_Filter_Pages_By_Title'))?['self'], outputs('EM02_Compose_Existing_Page_Self_Url'), '')",
+            "runAfter": { "PG09_Compose_Output_Page_Link": ["SUCCEEDED"] }
+          }
+        },
+        "else": {
+          "actions": {
+            "PG11_Create_Page_In_Section": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "notebookKey": "Meeting Notes|$|https://jsainsbury-my.sharepoint.com/personal/david_croxson_sainsburys_co_uk/Documents/Meeting Notes",
+                  "sectionId": "@outputs('PG00_Compose_Target_Section_Pages_Url')",
+                  "pageContent": "<p class=\"editor-paragraph\">@{outputs('NZ07_Compose_PageHtmlDocument')}</p>"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_onenote",
+                  "connection": "shared_onenote",
+                  "operationId": "CreatePageInSection"
+                }
+              }
+            },
+            "PG12_Compose_Page_Action": {
+              "type": "Compose",
+              "inputs": "Created",
+              "runAfter": { "PG11_Create_Page_In_Section": ["SUCCEEDED"] }
+            },
+            "PG13_Compose_Output_Page_Link": {
+              "type": "Compose",
+              "inputs": "@coalesce(outputs('PG11_Create_Page_In_Section')?['body']?['links']?['oneNoteWebUrl']?['href'], '')",
+              "runAfter": { "PG12_Compose_Page_Action": ["SUCCEEDED"] }
+            },
+            "PG14_Compose_Output_Page_Self_Url": {
+              "type": "Compose",
+              "inputs": "@coalesce(outputs('PG11_Create_Page_In_Section')?['body']?['self'], '')",
+              "runAfter": { "PG13_Compose_Output_Page_Link": ["SUCCEEDED"] }
+            }
+          }
+        },
+        "runAfter": { "PG04_Compose_Page_Decision": ["SUCCEEDED"] }
+      },
+      "PG15_Compose_Page_Action_Final": {
+        "type": "Compose",
+        "inputs": "@coalesce(outputs('PG08_Compose_Page_Action'), outputs('PG12_Compose_Page_Action'), '')",
+        "runAfter": { "PG05_Condition_Page_Exists": ["SUCCEEDED"] }
+      },
+      "PG16_Compose_Page_Link_Final": {
+        "type": "Compose",
+        "inputs": "@coalesce(outputs('PG09_Compose_Output_Page_Link'), outputs('PG13_Compose_Output_Page_Link'), '')",
+        "runAfter": { "PG15_Compose_Page_Action_Final": ["SUCCEEDED"] }
+      },
+      "PG17_Compose_Page_Self_Url_Final": {
+        "type": "Compose",
+        "inputs": "@coalesce(outputs('PG10_Compose_Output_Page_Self_Url'), outputs('PG14_Compose_Output_Page_Self_Url'), '')",
+        "runAfter": { "PG16_Compose_Page_Link_Final": ["SUCCEEDED"] }
+      }
+    },
+    "runAfter": { "Scope_SectionResolve": ["SUCCEEDED"] }
+  }
+}
