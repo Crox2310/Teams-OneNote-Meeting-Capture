@@ -1,0 +1,322 @@
+{
+  "description": "PA - Meeting Capture - A - Resolve Meeting Selection",
+  "flowId": "d9d7ccf7-7d61-f111-a826-6045bde03856",
+  "checkpointDate": "2026-10-02",
+  "notes": "Working end-to-end. Key fixes in this checkpoint: FA43 status uses if(FA15) gate to prevent FA38 MULTIPLE_MATCHES bleeding into resolve path; FA43 matchcount simplified to string(FA13); FA10/FA11/FA11A/FA12 dead varCandidates loop removed; FA14 dead legacy action removed; FA15 hardened with C in exclusion array; FA16 returns -1 for invalid input; FA19D added for EndTime on resolve path; FA36a hardened against empty-string false Captured matches; FA43 runAfter includes Succeeded/SKIPPED/FAILED.",
+  "trigger": {
+    "type": "Request",
+    "kind": "Skills",
+    "inputs": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "text_1": {
+            "description": "Selected meeting index (blank for initial call)",
+            "title": "InSelectedNumber",
+            "type": "string",
+            "x-ms-content-hint": "TEXT",
+            "x-ms-dynamically-added": true
+          },
+          "text_3": {
+            "description": "Date context used for filtering calendar results",
+            "title": "DateContext",
+            "type": "string",
+            "x-ms-content-hint": "TEXT",
+            "x-ms-dynamically-added": true
+          }
+        },
+        "required": ["text_1", "text_3"]
+      }
+    },
+    "metadata": {
+      "flowSystemMetadata": {
+        "flowKind": "Stateful"
+      }
+    }
+  },
+  "FA02_Init_varInSelectedNumber": {
+    "type": "InitializeVariable",
+    "inputs": {
+      "variables": [{"name": "varInSelectedNumber", "type": "string"}]
+    },
+    "runAfter": {}
+  },
+  "FA04_Init_varDateContext": {
+    "type": "InitializeVariable",
+    "inputs": {
+      "variables": [{"name": "varDateContext", "type": "string"}]
+    },
+    "runAfter": {"FA02_Init_varInSelectedNumber": ["SUCCEEDED"]}
+  },
+  "FA03A_DEBUG_RawInputs": {
+    "type": "Compose",
+    "inputs": "\"UserSearchText\": \n  \"InSelectedNumber\": @{variables('varInSelectedNumber')}\n  \"OriginalUserSearchText\": \n  \"DateContext\": @{variables('varDateContext')}\n  \"MaxCandidates\": \n",
+    "runAfter": {"FA04_Init_varDateContext": ["SUCCEEDED"]}
+  },
+  "Scope_CalendarFetch": {
+    "type": "Scope",
+    "actions": {
+      "FA06_Compose_StartOfDayUtc": {
+        "type": "Compose",
+        "inputs": "@formatDateTime(if(empty(trim(coalesce(variables('varDateContext'), ''))), utcNow(), variables('varDateContext')), 'yyyy-MM-ddT00:00:00Z')"
+      },
+      "FA07_Compose_EndOfDayUtc": {
+        "type": "Compose",
+        "inputs": "@formatDateTime(if(empty(trim(coalesce(variables('varDateContext'), ''))), utcNow(), variables('varDateContext')), 'yyyy-MM-ddT23:59:59Z')",
+        "runAfter": {"FA06_Compose_StartOfDayUtc": ["SUCCEEDED"]}
+      },
+      "FA08_Get_calendar_view_of_events": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "parameters": {
+            "calendarId": "AAMkAGY0OGU4Mzk5LWQ4NTYtNDU4MS1hY2YyLTQxOWYwZjhiMWM1ZQBGAAAAAADWkXK1vW2mQ4SwNGpyD7SzBwB8mPnOPkRmT5-MxNoNopoPAAAAAAEGAAB8mPnOPkRmT5-MxNoNopoPAACPZPifAAA=",
+            "startDateTimeUtc": "@outputs('FA06_Compose_StartOfDayUtc')",
+            "endDateTimeUtc": "@outputs('FA07_Compose_EndOfDayUtc')"
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+            "connection": "shared_office365",
+            "operationId": "GetEventsCalendarViewV3"
+          }
+        },
+        "runAfter": {"FA07_Compose_EndOfDayUtc": ["SUCCEEDED"]}
+      },
+      "FA08A_DEBUG_RawConnectorOutput": {
+        "type": "Compose",
+        "inputs": "@body('FA08_Get_calendar_view_of_events')",
+        "runAfter": {"FA08_Get_calendar_view_of_events": ["SUCCEEDED"]}
+      },
+      "FA09_RAW_CandidateArray_DoNotUseDownstream": {
+        "type": "Compose",
+        "inputs": "@body('FA08_Get_calendar_view_of_events')?['value']",
+        "runAfter": {"FA08A_DEBUG_RawConnectorOutput": ["SUCCEEDED"]}
+      },
+      "FA09B_Filter_ExcludeLeaveAndPeriodEntries": {
+        "type": "Query",
+        "inputs": {
+          "from": "@outputs('FA09_RAW_CandidateArray_DoNotUseDownstream')",
+          "where": "@not(or(contains(toLower(coalesce(item()?['subject'], '')), 'holiday'), contains(toLower(coalesce(item()?['subject'], '')), 'leave'), contains(toLower(coalesce(item()?['subject'], '')), 'a/l'), contains(toLower(coalesce(item()?['subject'], '')), 'ooo'), contains(toLower(coalesce(item()?['subject'], '')), 'out of office'), contains(toLower(coalesce(item()?['subject'], '')), 'bank holiday'), contains(toLower(coalesce(item()?['subject'], '')), 'smarter working'), and(startsWith(toLower(coalesce(item()?['subject'], '')), 'p'), contains(toLower(coalesce(item()?['subject'], '')), ' w'), contains(toLower(coalesce(item()?['subject'], '')), '(week ')), contains(toLower(coalesce(item()?['subject'], '')), 'manage email & teams'), contains(toLower(coalesce(item()?['subject'], '')), 'quiet hour')))"
+        },
+        "runAfter": {"FA09_RAW_CandidateArray_DoNotUseDownstream": ["SUCCEEDED"]}
+      },
+      "FA09C_Sort_CandidatesByStartTime": {
+        "type": "Compose",
+        "inputs": "@sort(body('FA09B_Filter_ExcludeLeaveAndPeriodEntries'), 'start')",
+        "runAfter": {"FA09B_Filter_ExcludeLeaveAndPeriodEntries": ["SUCCEEDED"]}
+      }
+    },
+    "runAfter": {"FA03A_DEBUG_RawInputs": ["Succeeded"]}
+  },
+  "FA34_Initialize_varCandidateIndex": {
+    "type": "InitializeVariable",
+    "inputs": {
+      "variables": [{"name": "varCandidateIndex", "type": "integer"}]
+    },
+    "runAfter": {"Scope_CalendarFetch": ["SUCCEEDED"]}
+  },
+  "FA12B_Select_Candidates": {
+    "type": "Select",
+    "inputs": {
+      "from": "@outputs('FA09C_Sort_CandidatesByStartTime')",
+      "select": {
+        "Title": "@coalesce(item()?['subject'], '')",
+        "Start": "@coalesce(item()?['start'], '')",
+        "Id": "@coalesce(item()?['id'], '')",
+        "IsRecurring": "@if(empty(coalesce(item()?['seriesMasterId'], '')), 'false', 'true')",
+        "SeriesMasterId": "@coalesce(item()?['seriesMasterId'], '')",
+        "OnlineMeetingUrl": "@if(contains(coalesce(item()?['body'], ''), 'href=\"https://teams.microsoft.com/l/meetup-join/'), concat('https://teams.microsoft.com/l/meetup-join/', first(split(split(coalesce(item()?['body'], ''), 'href=\"https://teams.microsoft.com/l/meetup-join/')[1], '\"'))), '')",
+        "BodyPreview": "@if(empty(coalesce(item()?['body'], '')), '', substring(coalesce(item()?['body'], ''), 0, min(2000, length(coalesce(item()?['body'], '')))))",
+        "End": "@coalesce(item()?['end'], '')"
+      }
+    },
+    "runAfter": {"FA34_Initialize_varCandidateIndex": ["SUCCEEDED"]}
+  },
+  "FA13_Compose_MatchCount": {
+    "type": "Compose",
+    "inputs": "@length(outputs('FA09C_Sort_CandidatesByStartTime'))",
+    "runAfter": {"FA12B_Select_Candidates": ["SUCCEEDED"]}
+  },
+  "FA33_Initialize_varCandidateListText": {
+    "type": "InitializeVariable",
+    "inputs": {
+      "variables": [{"name": "varCandidateListText", "type": "string"}]
+    },
+    "runAfter": {"FA13_Compose_MatchCount": ["SUCCEEDED"]}
+  },
+  "Scope_CandidateBuild": {
+    "type": "Scope",
+    "actions": {
+      "FA27_Condition_MatchCount": {
+        "type": "If",
+        "expression": {"and": [{"equals": ["@outputs('FA13_Compose_MatchCount')", 0]}]},
+        "actions": {
+          "FA27B_Compose_OutStatus_NoMatch": {"type": "Compose", "inputs": "NO_MATCH"},
+          "FA27C_Compose_OutMatchCount_NoMatch": {"type": "Compose", "inputs": 0, "runAfter": {"FA27B_Compose_OutStatus_NoMatch": ["Succeeded"]}},
+          "FA27D_Compose_OutCandidateList_NoMatch": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA27C_Compose_OutMatchCount_NoMatch": ["Succeeded"]}},
+          "FA27E_Compose_OutMeetingTitle_NoMatch": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA27D_Compose_OutCandidateList_NoMatch": ["Succeeded"]}},
+          "FA27F_Compose_OutCalendarEventId_NoMatch": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA27E_Compose_OutMeetingTitle_NoMatch": ["Succeeded"]}},
+          "FA27G_Compose_OutIsRecurring_NoMatch": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA27F_Compose_OutCalendarEventId_NoMatch": ["Succeeded"]}},
+          "FA27H_Compose_OutSeriesMasterId_NoMatch": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA27G_Compose_OutIsRecurring_NoMatch": ["Succeeded"]}}
+        },
+        "else": {
+          "actions": {
+            "FA27A_Condition_MatchCountIsOne": {
+              "type": "If",
+              "expression": {"and": [{"equals": ["@outputs('FA13_Compose_MatchCount')", 1]}]},
+              "actions": {
+                "FA28_Compose_SingleEvent": {"type": "Compose", "inputs": "@outputs('FA09C_Sort_CandidatesByStartTime')[0]"},
+                "FA28A_Compose_OutIsRecurring": {"type": "Compose", "inputs": "@if(empty(coalesce(outputs('FA28_Compose_SingleEvent')?['seriesMasterId'], '')), 'false', 'true')", "runAfter": {"FA28_Compose_SingleEvent": ["Succeeded"]}},
+                "FA28B_Compose_OutSeriesMasterId": {"type": "Compose", "inputs": "@coalesce(outputs('FA28_Compose_SingleEvent')?['seriesMasterId'], '')", "runAfter": {"FA28A_Compose_OutIsRecurring": ["Succeeded"]}},
+                "FA28C_Compose_OutEndTime": {"type": "Compose", "inputs": "@coalesce(outputs('FA28_Compose_SingleEvent')?['endWithTimeZone'], '')", "runAfter": {"FA28B_Compose_OutSeriesMasterId": ["Succeeded"]}},
+                "FA29_Compose_OutMeetingTitle": {"type": "Compose", "inputs": "@coalesce(outputs('FA28_Compose_SingleEvent')?['subject'], '')", "runAfter": {"FA28C_Compose_OutEndTime": ["Succeeded"]}},
+                "FA29B_Compose_OutBodyPreview_Single": {"type": "Compose", "inputs": "@if(equals(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], ''), ''), '', substring(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], ''), 0, max(indexOf(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], ''), '</body>'), 0)))", "runAfter": {"FA29_Compose_OutMeetingTitle": ["Succeeded"]}},
+                "FA29D_Compose_JoinUrlAnchorIndex": {"type": "Compose", "inputs": "@indexOf(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], ''), 'href=\"https://teams.microsoft.com/l/meetup-join/')", "runAfter": {"FA29B_Compose_OutBodyPreview_Single": ["Succeeded"]}},
+                "FA29E_Compose_JoinUrlFromAnchor": {"type": "Compose", "inputs": "@if(equals(outputs('FA29D_Compose_JoinUrlAnchorIndex'), -1), '', substring(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], ''), add(outputs('FA29D_Compose_JoinUrlAnchorIndex'), 6), sub(length(coalesce(outputs('FA28_Compose_SingleEvent')?['body'], '')), add(outputs('FA29D_Compose_JoinUrlAnchorIndex'), 6))))", "runAfter": {"FA29D_Compose_JoinUrlAnchorIndex": ["Succeeded"]}},
+                "FA29F_Compose_JoinUrlExtracted": {"type": "Compose", "inputs": "@if(equals(outputs('FA29E_Compose_JoinUrlFromAnchor'), ''), '', substring(outputs('FA29E_Compose_JoinUrlFromAnchor'), 0, if(equals(indexOf(outputs('FA29E_Compose_JoinUrlFromAnchor'), '\"'), -1), length(outputs('FA29E_Compose_JoinUrlFromAnchor')), indexOf(outputs('FA29E_Compose_JoinUrlFromAnchor'), '\"'))))", "runAfter": {"FA29E_Compose_JoinUrlFromAnchor": ["Succeeded"]}},
+                "FA29C_Compose_OutOnlineMeetingUrl_Single": {"type": "Compose", "inputs": "@if(empty(coalesce(outputs('FA28_Compose_SingleEvent')?['onlineMeeting']?['joinUrl'], '')), outputs('FA29F_Compose_JoinUrlExtracted'), outputs('FA28_Compose_SingleEvent')?['onlineMeeting']?['joinUrl'])", "runAfter": {"FA29F_Compose_JoinUrlExtracted": ["Succeeded"]}},
+                "FA30_Compose_OutCalendarEventId": {"type": "Compose", "inputs": "@coalesce(outputs('FA28_Compose_SingleEvent')?['id'], '')", "runAfter": {"FA29C_Compose_OutOnlineMeetingUrl_Single": ["Succeeded"]}},
+                "FA31_Compose_OutMatchCount_Single": {"type": "Compose", "inputs": 1, "runAfter": {"FA30_Compose_OutCalendarEventId": ["Succeeded"]}},
+                "FA32_Compose_OutCandidateList_Single": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA31_Compose_OutMatchCount_Single": ["Succeeded"]}}
+              },
+              "else": {
+                "actions": {
+                  "FA33A_Set_varCandidateListText_Empty": {"type": "SetVariable", "inputs": {"name": "varCandidateListText", "value": "@string('')"}},
+                  "FA34A_Set_varCandidateIndex_One": {"type": "SetVariable", "inputs": {"name": "varCandidateIndex", "value": 1}, "runAfter": {"FA33A_Set_varCandidateListText_Empty": ["Succeeded"]}},
+                  "FA-GetMappingRows": {
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "parameters": {
+                        "dataset": "https://jsainsbury.sharepoint.com/sites/coplt",
+                        "table": "186b3c9f-e758-4e85-83d5-685946614a0a",
+                        "$filter": "OccurrenceDate eq '@{formatDateTime(if(empty(trim(coalesce(variables('varDateContext'), ''))), utcNow(), variables('varDateContext')), 'yyyy-MM-dd')}'",
+                        "$top": 50
+                      },
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                        "connection": "shared_sharepointonline",
+                        "operationId": "GetItems"
+                      }
+                    },
+                    "runAfter": {"FA34A_Set_varCandidateIndex_One": ["Succeeded"]}
+                  },
+                  "FA35_Apply_to_each_CandidateArray_ForList": {
+                    "type": "Foreach",
+                    "foreach": "@outputs('FA09C_Sort_CandidatesByStartTime')",
+                    "actions": {
+                      "FA36a_Filter_MappingMatch": {
+                        "type": "Query",
+                        "inputs": {
+                          "from": "@body('FA-GetMappingRows')?['value']",
+                          "where": "@or(and(not(empty(coalesce(items('FA35_Apply_to_each_CandidateArray_ForList')?['seriesMasterId'], ''))), equals(item()?['SeriesMasterId'], items('FA35_Apply_to_each_CandidateArray_ForList')?['seriesMasterId'])), and(not(empty(coalesce(items('FA35_Apply_to_each_CandidateArray_ForList')?['id'], ''))), equals(item()?['MeetingId'], items('FA35_Apply_to_each_CandidateArray_ForList')?['id'])))"
+                        }
+                      },
+                      "FA36b_Compose_StatusLabel": {"type": "Compose", "inputs": "@if(equals(coalesce(first(body('FA36a_Filter_MappingMatch'))?['RecapCaptured'], false), true), ' - **Mtg Notes**', if(greater(length(body('FA36a_Filter_MappingMatch')), 0), ' - **Captured**', ''))", "runAfter": {"FA36a_Filter_MappingMatch": ["SUCCEEDED"]}},
+                      "FA36_Append_to_string_varCandidateListText": {"type": "AppendToStringVariable", "inputs": {"name": "varCandidateListText", "value": "@concat(string(variables('varCandidateIndex')), '. ', coalesce(item()?['subject'], 'Untitled meeting'), outputs('FA36b_Compose_StatusLabel'), decodeUriComponent('%0D%0A'))"}, "runAfter": {"FA36b_Compose_StatusLabel": ["SUCCEEDED"]}},
+                      "FA37_Increment_varCandidateIndex": {"type": "IncrementVariable", "inputs": {"name": "varCandidateIndex", "value": 1}, "runAfter": {"FA36_Append_to_string_varCandidateListText": ["Succeeded"]}}
+                    },
+                    "runAfter": {"FA-GetMappingRows": ["SUCCEEDED"]}
+                  },
+                  "FA38_Compose_OutStatus_Multi": {"type": "Compose", "inputs": "MULTIPLE_MATCHES", "runAfter": {"FA35_Apply_to_each_CandidateArray_ForList": ["Succeeded"]}},
+                  "FA39_Compose_OutMatchCount_Multi": {"type": "Compose", "inputs": "@string(outputs('FA13_Compose_MatchCount'))", "runAfter": {"FA38_Compose_OutStatus_Multi": ["Succeeded"]}},
+                  "FA40_Compose_OutCandidateList_Multi": {"type": "Compose", "inputs": "@concat('Meetings for ', formatDateTime(variables('varDateContext'), 'ddd d MMM yyyy'), decodeUriComponent('%0D%0A'), variables('varCandidateListText'))", "runAfter": {"FA39_Compose_OutMatchCount_Multi": ["Succeeded"]}},
+                  "FA41_Compose_OutMeetingTitle_Multi": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA40_Compose_OutCandidateList_Multi": ["Succeeded"]}},
+                  "FA42_Compose_OutCalendarEventId_Multi": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA41_Compose_OutMeetingTitle_Multi": ["Succeeded"]}},
+                  "FA43A_Compose_OutIsRecurring_Multi": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA42_Compose_OutCalendarEventId_Multi": ["Succeeded"]}},
+                  "FA43B_Compose_OutSeriesMasterId_Multi": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA43A_Compose_OutIsRecurring_Multi": ["Succeeded"]}}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "runAfter": {"FA33_Initialize_varCandidateListText": ["SUCCEEDED"]}
+  },
+  "Scope_Resolve": {
+    "type": "Scope",
+    "actions": {
+      "FA15_Compose_IsSelectionMode": {
+        "type": "Compose",
+        "inputs": "@and(not(empty(trim(variables('varInSelectedNumber')))), not(contains(createArray('NONE','P','N','C'), toUpper(trim(variables('varInSelectedNumber'))))))"
+      },
+      "FA17_Condition_IsSelectionMode": {
+        "type": "If",
+        "expression": {"and": [{"equals": ["@outputs('FA15_Compose_IsSelectionMode')", "@true"]}]},
+        "actions": {
+          "FA16_Compose_SelectedIndex": {
+            "type": "Compose",
+            "inputs": "@if(or(equals(trim(variables('varInSelectedNumber')), ''), not(equals(string(mul(int(if(equals(trim(variables('varInSelectedNumber')), ''), '1', trim(variables('varInSelectedNumber')))), 1)), trim(variables('varInSelectedNumber'))))), -1, sub(int(trim(variables('varInSelectedNumber'))), 1))"
+          },
+          "FA18_Condition_SelectedIndexInRange": {
+            "type": "If",
+            "expression": {"and": [{"equals": ["@and(\n  greaterOrEquals(int(outputs('FA16_Compose_SelectedIndex')), 0),\n  less(int(outputs('FA16_Compose_SelectedIndex')), int(outputs('FA13_Compose_MatchCount')))\n)", "@true"]}]},
+            "actions": {
+              "FA19_Compose_SelectedEvent": {"type": "Compose", "inputs": "@outputs('FA09C_Sort_CandidatesByStartTime')[outputs('FA16_Compose_SelectedIndex')]"},
+              "FA20_Compose_OutMeetingTitle": {"type": "Compose", "inputs": "@coalesce(outputs('FA19_Compose_SelectedEvent')?['subject'], '')", "runAfter": {"FA19_Compose_SelectedEvent": ["Succeeded"]}},
+              "FA21_Compose_OutCalendarEventId": {"type": "Compose", "inputs": "@coalesce(outputs('FA19_Compose_SelectedEvent')?['id'], '')", "runAfter": {"FA20_Compose_OutMeetingTitle": ["Succeeded"]}},
+              "FA19D_Compose_OutEndTime_Resolved": {"type": "Compose", "inputs": "@coalesce(outputs('FA19_Compose_SelectedEvent')?['endWithTimeZone'], '')", "runAfter": {"FA21_Compose_OutCalendarEventId": ["Succeeded"]}},
+              "FA20B_Compose_OutBodyPreview": {"type": "Compose", "inputs": "@if(equals(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], ''), ''), '', substring(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], ''), 0, max(indexOf(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], ''), '</body>'), 0)))", "runAfter": {"FA19D_Compose_OutEndTime_Resolved": ["SUCCEEDED"]}},
+              "FA20D_Compose_JoinUrlAnchorIndex": {"type": "Compose", "inputs": "@indexOf(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], ''), 'href=\"https://teams.microsoft.com/')", "runAfter": {"FA20B_Compose_OutBodyPreview": ["Succeeded"]}},
+              "FA20E_Compose_JoinUrlFromAnchor": {"type": "Compose", "inputs": "@if(equals(outputs('FA20D_Compose_JoinUrlAnchorIndex'), -1), '', substring(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], ''), add(outputs('FA20D_Compose_JoinUrlAnchorIndex'), 6), sub(length(coalesce(outputs('FA19_Compose_SelectedEvent')?['body'], '')), add(outputs('FA20D_Compose_JoinUrlAnchorIndex'), 6))))", "runAfter": {"FA20D_Compose_JoinUrlAnchorIndex": ["Succeeded"]}},
+              "FA20F_Compose_JoinUrlExtracted": {"type": "Compose", "inputs": "@if(equals(outputs('FA20E_Compose_JoinUrlFromAnchor'), ''), '', substring(outputs('FA20E_Compose_JoinUrlFromAnchor'), 0, if(equals(indexOf(outputs('FA20E_Compose_JoinUrlFromAnchor'), '\"'), -1), length(outputs('FA20E_Compose_JoinUrlFromAnchor')), indexOf(outputs('FA20E_Compose_JoinUrlFromAnchor'), '\"'))))", "runAfter": {"FA20E_Compose_JoinUrlFromAnchor": ["Succeeded"]}},
+              "FA20C_Compose_OutOnlineMeetingUrl": {"type": "Compose", "inputs": "@if(empty(coalesce(outputs('FA19_Compose_SelectedEvent')?['onlineMeeting']?['joinUrl'], '')), outputs('FA20F_Compose_JoinUrlExtracted'), outputs('FA19_Compose_SelectedEvent')?['onlineMeeting']?['joinUrl'])", "runAfter": {"FA20F_Compose_JoinUrlExtracted": ["Succeeded"]}},
+              "FA19B_Compose_OutIsRecurring_Resolved": {"type": "Compose", "inputs": "@if(empty(coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')), 'false', 'true')", "runAfter": {"FA20C_Compose_OutOnlineMeetingUrl": ["Succeeded"]}},
+              "FA19C_Compose_OutSeriesMasterId_Resolved": {"type": "Compose", "inputs": "@coalesce(outputs('FA19_Compose_SelectedEvent')?['seriesMasterId'], '')", "runAfter": {"FA19B_Compose_OutIsRecurring_Resolved": ["Succeeded"]}},
+              "FA22_Compose_OutMatchCount_Resolved": {"type": "Compose", "inputs": 1, "runAfter": {"FA19C_Compose_OutSeriesMasterId_Resolved": ["Succeeded"]}},
+              "FA23_Compose_OutCandidateList_Resolved": {"type": "Compose", "inputs": "@string('')", "runAfter": {"FA22_Compose_OutMatchCount_Resolved": ["Succeeded"]}}
+            },
+            "else": {
+              "actions": {
+                "FA24_Compose_OutStatus_InvalidSelection": {"type": "Compose", "inputs": "ERROR"},
+                "FA25_Compose_OutMatchCount_Error": {"type": "Compose", "inputs": 0, "runAfter": {"FA24_Compose_OutStatus_InvalidSelection": ["Succeeded"]}},
+                "FA26_Compose_OutCandidateList_Error": {"type": "Compose", "inputs": "Selected number is out of range.", "runAfter": {"FA25_Compose_OutMatchCount_Error": ["Succeeded"]}}
+              }
+            },
+            "runAfter": {"FA16_Compose_SelectedIndex": ["Succeeded"]}
+          }
+        },
+        "else": {"actions": {}},
+        "runAfter": {"FA15_Compose_IsSelectionMode": ["SUCCEEDED"]}
+      }
+    },
+    "runAfter": {"Scope_CandidateBuild": ["Succeeded"]}
+  },
+  "FA43_Respond_to_agent": {
+    "type": "Response",
+    "kind": "Skills",
+    "inputs": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "status": {"title": "Status", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "matchcount": {"title": "MatchCount", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "candidatelist": {"title": "CandidateList", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "meetingtitle": {"title": "MeetingTitle", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "calendareventid": {"title": "CalendarEventId", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "isrecurring": {"title": "IsRecurring", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "seriesmasterid": {"title": "SeriesMasterId", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "onlinemeetingurl": {"title": "OnlineMeetingUrl", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "bodypreview": {"title": "BodyPreview", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "candidatesjson": {"title": "candidatesjson", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true},
+          "endtime": {"title": "endtime", "type": "string", "x-ms-content-hint": "TEXT", "x-ms-dynamically-added": true}
+        },
+        "additionalProperties": {}
+      },
+      "statusCode": 200,
+      "body": {
+        "status": "@{if(outputs('FA15_Compose_IsSelectionMode'), coalesce(outputs('FA24_Compose_OutStatus_InvalidSelection'), 'OK'), coalesce(outputs('FA27B_Compose_OutStatus_NoMatch'), outputs('FA38_Compose_OutStatus_Multi'), 'OK'))}",
+        "matchcount": "@{string(outputs('FA13_Compose_MatchCount'))}",
+        "candidatelist": "@{coalesce(outputs('FA26_Compose_OutCandidateList_Error'), outputs('FA27D_Compose_OutCandidateList_NoMatch'), outputs('FA32_Compose_OutCandidateList_Single'), outputs('FA40_Compose_OutCandidateList_Multi'), string(''))}",
+        "meetingtitle": "@{coalesce(outputs('FA20_Compose_OutMeetingTitle'), outputs('FA29_Compose_OutMeetingTitle'), outputs('FA27E_Compose_OutMeetingTitle_NoMatch'), outputs('FA41_Compose_OutMeetingTitle_Multi'), string(''))}",
+        "calendareventid": "@{coalesce(outputs('FA21_Compose_OutCalendarEventId'), outputs('FA30_Compose_OutCalendarEventId'), outputs('FA27F_Compose_OutCalendarEventId_NoMatch'), outputs('FA42_Compose_OutCalendarEventId_Multi'), string(''))}",
+        "isrecurring": "@{coalesce(outputs('FA19B_Compose_OutIsRecurring_Resolved'), outputs('FA28A_Compose_OutIsRecurring'), outputs('FA43A_Compose_OutIsRecurring_Multi'), '')}",
+        "seriesmasterid": "@{coalesce(outputs('FA19C_Compose_OutSeriesMasterId_Resolved'), outputs('FA28B_Compose_OutSeriesMasterId'), outputs('FA43B_Compose_OutSeriesMasterId_Multi'), '')}",
+        "onlinemeetingurl": "@{coalesce(outputs('FA20C_Compose_OutOnlineMeetingUrl'), outputs('FA29C_Compose_OutOnlineMeetingUrl_Single'), string(''))}",
+        "bodypreview": "@{coalesce(outputs('FA20B_Compose_OutBodyPreview'), outputs('FA29B_Compose_OutBodyPreview_Single'), string(''))}",
+        "candidatesjson": "@{string(body('FA12B_Select_Candidates'))}",
+        "endtime": "@{coalesce(outputs('FA19D_Compose_OutEndTime_Resolved'), outputs('FA28C_Compose_OutEndTime'), '')}"
+      }
+    },
+    "runAfter": {"Scope_Resolve": ["Succeeded", "SKIPPED", "FAILED"]}
+  }
+}
